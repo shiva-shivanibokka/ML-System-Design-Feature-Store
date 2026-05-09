@@ -1,0 +1,184 @@
+version: "3.9"
+
+# =============================================================================
+# ML System Design: End-to-End Feature Store
+# =============================================================================
+# Architecture:
+#   clickhouse  — columnar offline store (point-in-time correct joins, backfill)
+#   redis       — online store (hash-per-entity, <2ms feature retrieval)
+#   api         — FastAPI feature server (dual-path: batch + on-demand)
+#   gradio      — 4-tab UI (explorer, training pull, skew report, mat. log)
+#   mlflow      — experiment tracking + model registry
+#
+# Quick start:
+#   docker-compose up --build
+#   python data/generate.py          # seed raw tables
+#   python materialization/backfill.py --days 90   # build feature history
+#   python materialization/materialize.py           # push to online store
+#   python training/train.py                        # train + register model
+#
+# Access:
+#   Feature API docs:  http://localhost:8000/docs
+#   Gradio UI:         http://localhost:7860
+#   MLflow UI:         http://localhost:5001
+#   ClickHouse HTTP:   http://localhost:8123/play
+# =============================================================================
+
+networks:
+  feature-net:
+    driver: bridge
+
+volumes:
+  clickhouse-data:
+  redis-data:
+  mlflow-data:
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # ClickHouse — columnar offline feature store
+  # HTTP interface: port 8123  |  Native TCP: port 9000
+  # Used for: feature history, point-in-time joins, backfill, skew snapshots,
+  #           feature lineage metadata, materialization audit log
+  # ---------------------------------------------------------------------------
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3-alpine
+    container_name: fs_clickhouse
+    restart: unless-stopped
+    ports:
+      - "8123:8123"   # HTTP interface (query playground at /play)
+      - "9000:9000"   # Native TCP (clickhouse-driver)
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ./configs/clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    environment:
+      CLICKHOUSE_DB: feature_store
+      CLICKHOUSE_USER: fs_user
+      CLICKHOUSE_PASSWORD: fs_pass
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - feature-net
+
+  # ---------------------------------------------------------------------------
+  # Redis — online feature store
+  # Hash-per-entity pattern: HSET entity:{id} feature1 val1 feature2 val2 ...
+  # Sub-2ms retrieval for pre-materialized entities at serving time.
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: fs_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - feature-net
+
+  # ---------------------------------------------------------------------------
+  # Feature Server (FastAPI)
+  # Dual-path architecture:
+  #   Batch path:     Redis HGETALL  →  <2ms  (pre-materialized entities)
+  #   On-demand path: ClickHouse SQL →  ~20ms (unseen / cold-start entities)
+  # Endpoints: /features, /features/batch, /skew-report, /lineage, /health
+  # ---------------------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: fs_api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_PORT: "9000"
+      CLICKHOUSE_DB: feature_store
+      CLICKHOUSE_USER: fs_user
+      CLICKHOUSE_PASSWORD: fs_pass
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      PYTHONPATH: /app
+      PYTHONUNBUFFERED: "1"
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks:
+      - feature-net
+
+  # ---------------------------------------------------------------------------
+  # Gradio — 4-tab feature store dashboard
+  #   Tab 1: Feature Explorer  (browse features, schema, stats, lineage DAG)
+  #   Tab 2: Training Pull     (PIT-correct dataset download)
+  #   Tab 3: Skew Report       (training vs serving distribution + KS test)
+  #   Tab 4: Materialization   (log of all mat. runs, entity counts, latency)
+  # ---------------------------------------------------------------------------
+  gradio:
+    build:
+      context: .
+      dockerfile: Dockerfile.gradio
+    container_name: fs_gradio
+    restart: unless-stopped
+    ports:
+      - "7860:7860"
+    environment:
+      API_URL: http://api:8000
+      MLFLOW_TRACKING_URI: http://mlflow:5001
+      PYTHONPATH: /app
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - feature-net
+
+  # ---------------------------------------------------------------------------
+  # MLflow — experiment tracking + model registry
+  # Stores: training runs, hyperparameters, metrics, registered model versions
+  # ---------------------------------------------------------------------------
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.13.0
+    container_name: fs_mlflow
+    restart: unless-stopped
+    ports:
+      - "5001:5001"
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 5001
+      --backend-store-uri sqlite:///mlflow/mlflow.db
+      --default-artifact-root /mlflow/artifacts
+    volumes:
+      - mlflow-data:/mlflow
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks:
+      - feature-net

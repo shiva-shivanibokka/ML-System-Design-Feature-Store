@@ -1,0 +1,32 @@
+# =============================================================================
+# Feature Server (FastAPI) — requirements
+# =============================================================================
+
+# API framework
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+pydantic==2.7.1
+httpx==0.27.0
+
+# ClickHouse driver (native TCP — faster than HTTP driver)
+clickhouse-driver==0.2.7
+
+# Redis
+redis==5.0.4
+
+# Feature validation
+pandera==0.20.0
+
+# Data
+pandas==2.2.2
+numpy==1.26.4
+scipy==1.13.0
+
+# Structured logging
+structlog==24.2.0
+
+# YAML config
+pyyaml==6.0.1
+
+# Scheduling (for materialize.py --schedule mode)
+APScheduler==3.10.4

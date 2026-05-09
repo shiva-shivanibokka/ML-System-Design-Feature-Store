@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.so
+.Python
+
+# Virtualenvs
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Environment
+.env
+.env.local
+
+# Models (large binaries)
+models/*.pkl
+models/*.joblib
+models/*.txt
+models/*.json
+!models/.gitkeep
+
+# Data (generated)
+data/*.parquet
+data/*.csv
+data/*.json
+!data/.gitkeep
+
+# MLflow
+mlruns/
+mlflow.db
+
+# Coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# macOS
+.DS_Store
+
+# Docker
+*.log
+
+# Ruff
+.ruff_cache/

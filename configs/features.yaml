@@ -1,0 +1,192 @@
+# =============================================================================
+# Feature Definitions — Single source of truth
+# =============================================================================
+# Every feature consumed by training or serving must be defined here.
+# Changes to transformations require a version bump (v1 → v2).
+# The registry loader reads this file on startup and syncs to ClickHouse.
+# =============================================================================
+
+feature_version: "v1"
+entity_type: "user"
+
+features:
+
+  # ── Transaction behavioral features ─────────────────────────────────────────
+
+  - name: txn_count_7d
+    dtype: float32
+    description: "Number of transactions in the last 7 days"
+    source_table: raw_transactions
+    transformation: "countIf(status = 'success') OVER last_7d"
+    owner: ml-platform
+    tags: [behavioral, transaction, short-term]
+
+  - name: txn_count_30d
+    dtype: float32
+    description: "Number of transactions in the last 30 days"
+    source_table: raw_transactions
+    transformation: "countIf(status = 'success') OVER last_30d"
+    owner: ml-platform
+    tags: [behavioral, transaction, medium-term]
+
+  - name: txn_count_90d
+    dtype: float32
+    description: "Number of transactions in the last 90 days"
+    source_table: raw_transactions
+    transformation: "countIf(status = 'success') OVER last_90d"
+    owner: ml-platform
+    tags: [behavioral, transaction, long-term]
+
+  - name: total_spend_7d
+    dtype: float32
+    description: "Total spend (successful transactions) in the last 7 days"
+    source_table: raw_transactions
+    transformation: "sumIf(amount, status = 'success') OVER last_7d"
+    owner: ml-platform
+    tags: [behavioral, spend, short-term]
+
+  - name: total_spend_30d
+    dtype: float32
+    description: "Total spend in the last 30 days"
+    source_table: raw_transactions
+    transformation: "sumIf(amount, status = 'success') OVER last_30d"
+    owner: ml-platform
+    tags: [behavioral, spend, medium-term]
+
+  - name: total_spend_90d
+    dtype: float32
+    description: "Total spend in the last 90 days"
+    source_table: raw_transactions
+    transformation: "sumIf(amount, status = 'success') OVER last_90d"
+    owner: ml-platform
+    tags: [behavioral, spend, long-term]
+
+  - name: avg_txn_amount_30d
+    dtype: float32
+    description: "Average transaction amount over the last 30 days"
+    source_table: raw_transactions
+    transformation: "avgIf(amount, status = 'success') OVER last_30d"
+    owner: ml-platform
+    tags: [behavioral, spend, medium-term]
+
+  - name: failed_txn_rate_30d
+    dtype: float32
+    description: "Rate of failed transactions in the last 30 days (0-1)"
+    source_table: raw_transactions
+    transformation: "countIf(status='failed') / nullIf(count(), 0) OVER last_30d"
+    owner: ml-platform
+    tags: [behavioral, transaction, risk]
+
+  - name: days_since_last_txn
+    dtype: float32
+    description: "Days elapsed since the user's most recent transaction"
+    source_table: raw_transactions
+    transformation: "dateDiff('day', max(event_time), now())"
+    owner: ml-platform
+    tags: [behavioral, recency]
+
+  # ── Support ticket features ──────────────────────────────────────────────────
+
+  - name: open_tickets
+    dtype: float32
+    description: "Count of currently open (unresolved) support tickets"
+    source_table: raw_support_tickets
+    transformation: "countIf(resolved = 0)"
+    owner: ml-platform
+    tags: [support, risk]
+
+  - name: ticket_rate_30d
+    dtype: float32
+    description: "Number of support tickets opened in the last 30 days"
+    source_table: raw_support_tickets
+    transformation: "countIf(event_time >= now() - INTERVAL 30 DAY)"
+    owner: ml-platform
+    tags: [support, medium-term]
+
+  # ── Profile / static features ────────────────────────────────────────────────
+
+  - name: account_age_days
+    dtype: float32
+    description: "Days since account signup"
+    source_table: raw_users
+    transformation: "dateDiff('day', signup_date, today())"
+    owner: ml-platform
+    tags: [profile, static]
+
+  - name: plan_encoded
+    dtype: float32
+    description: "Plan type as ordinal: free=0, basic=1, pro=2, enterprise=3"
+    source_table: raw_users
+    transformation: "multiIf(plan_type='free',0, plan_type='basic',1, plan_type='pro',2, 3)"
+    owner: ml-platform
+    tags: [profile, static]
+
+# ── Lineage graph edges ────────────────────────────────────────────────────────
+# Defines the provenance DAG: raw tables → features → model inputs
+lineage_edges:
+  - source: raw_transactions
+    target: txn_count_7d
+    edge_type: source
+  - source: raw_transactions
+    target: txn_count_30d
+    edge_type: source
+  - source: raw_transactions
+    target: txn_count_90d
+    edge_type: source
+  - source: raw_transactions
+    target: total_spend_7d
+    edge_type: source
+  - source: raw_transactions
+    target: total_spend_30d
+    edge_type: source
+  - source: raw_transactions
+    target: total_spend_90d
+    edge_type: source
+  - source: raw_transactions
+    target: avg_txn_amount_30d
+    edge_type: source
+  - source: raw_transactions
+    target: failed_txn_rate_30d
+    edge_type: source
+  - source: raw_transactions
+    target: days_since_last_txn
+    edge_type: source
+  - source: raw_support_tickets
+    target: open_tickets
+    edge_type: source
+  - source: raw_support_tickets
+    target: ticket_rate_30d
+    edge_type: source
+  - source: raw_users
+    target: account_age_days
+    edge_type: source
+  - source: raw_users
+    target: plan_encoded
+    edge_type: source
+  - source: txn_count_30d
+    target: churn_predictor_v1
+    edge_type: model_input
+  - source: total_spend_30d
+    target: churn_predictor_v1
+    edge_type: model_input
+  - source: avg_txn_amount_30d
+    target: churn_predictor_v1
+    edge_type: model_input
+  - source: failed_txn_rate_30d
+    target: churn_predictor_v1
+    edge_type: model_input
+  - source: days_since_last_txn
+    target: churn_predictor_v1
+    edge_type: model_input
+  - source: open_tickets
+    target: churn_predictor_v1
+    edge_type: model_input
+  - source: ticket_rate_30d
+    target: churn_predictor_v1
+    edge_type: model_input
+  - source: account_age_days
+    target: churn_predictor_v1
+    edge_type: model_input
+  - source: plan_encoded
+    target: churn_predictor_v1
+    edge_type: model_input
