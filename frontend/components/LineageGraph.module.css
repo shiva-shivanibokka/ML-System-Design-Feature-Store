@@ -1,0 +1,67 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.legend {
+  display: flex;
+  gap: 18px;
+  padding: 0 18px;
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.legendSwatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.swatchRaw {
+  background: var(--text-faint);
+}
+.swatchFeature {
+  background: var(--cyan);
+}
+.swatchModel {
+  background: var(--amber);
+}
+
+.svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.nodeRaw {
+  fill: var(--surface-raised);
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+.nodeFeature {
+  fill: var(--cyan-dim);
+  stroke: var(--cyan);
+  stroke-width: 1;
+}
+.nodeModel {
+  fill: var(--amber-dim);
+  stroke: var(--amber);
+  stroke-width: 1;
+}
+
+.nodeLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  fill: var(--text);
+}

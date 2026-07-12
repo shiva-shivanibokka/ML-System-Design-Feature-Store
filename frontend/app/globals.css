@@ -1,0 +1,94 @@
+/* ---------------------------------------------------------------------
+   Design tokens — "instrument panel for a data system".
+   Dark, low-chroma ink background; hairline borders; three signal
+   accents borrowed from the domain itself: amber (source/freshness),
+   cyan (derived/feature), rose (anomaly/skew). No drop shadows — depth
+   comes from border + surface layering, like a schema diagram.
+   ------------------------------------------------------------------- */
+:root {
+  --bg: #0a0d12;
+  --bg-grid: #0d1118;
+  --surface: #12161f;
+  --surface-raised: #171c27;
+  --border: #232a3a;
+  --border-strong: #323b52;
+
+  --text: #e7eaf0;
+  --text-dim: #8a93a6;
+  --text-faint: #565f74;
+
+  --amber: #f2a93b;
+  --amber-dim: rgba(242, 169, 59, 0.14);
+  --cyan: #45d0c4;
+  --cyan-dim: rgba(69, 208, 196, 0.14);
+  --rose: #ef5c7a;
+  --rose-dim: rgba(239, 92, 122, 0.14);
+  --green: #5fd98a;
+  --green-dim: rgba(95, 217, 138, 0.14);
+
+  --radius: 5px;
+  --font-sans: var(--font-inter), -apple-system, "Segoe UI", system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background:
+    radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.045) 1px, transparent 0) 0 0 / 26px 26px,
+    var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+  color: inherit;
+}
+
+button {
+  font-family: inherit;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+::selection {
+  background: var(--amber-dim);
+  color: var(--text);
+}
+
+:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
