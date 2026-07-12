@@ -51,3 +51,6 @@ htmlcov/
 
 # Ruff
 .ruff_cache/
+
+# SDD scratch
+.superpowers/
