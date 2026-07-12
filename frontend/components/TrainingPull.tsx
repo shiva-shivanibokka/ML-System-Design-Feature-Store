@@ -123,22 +123,26 @@ export default function TrainingPull() {
                     </tr>
                   </thead>
                   <tbody>
-                    {Object.entries(data.results).map(([entityId, features]) => (
-                      <tr key={entityId}>
-                        <td className="mono">{entityId}</td>
-                        {features ? (
-                          featureCols.map((c) => (
-                            <td key={c} className="num">
-                              {features[c] !== undefined ? formatNum(features[c]) : "—"}
+                    {ids.map((id) => {
+                      const entityId = String(id);
+                      const features = data.results[entityId];
+                      return (
+                        <tr key={entityId}>
+                          <td className="mono">{entityId}</td>
+                          {features ? (
+                            featureCols.map((c) => (
+                              <td key={c} className="num">
+                                {features[c] !== undefined ? formatNum(features[c]) : "—"}
+                              </td>
+                            ))
+                          ) : (
+                            <td colSpan={featureCols.length} className="miss-cell">
+                              no features available
                             </td>
-                          ))
-                        ) : (
-                          <td colSpan={featureCols.length} className="miss-cell">
-                            no features available
-                          </td>
-                        )}
-                      </tr>
-                    ))}
+                          )}
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

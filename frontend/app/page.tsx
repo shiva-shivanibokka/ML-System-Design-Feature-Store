@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { KeyboardEvent, useRef, useState } from "react";
 import StatusPill from "@/components/StatusPill";
 import FeatureExplorer from "@/components/FeatureExplorer";
 import TrainingPull from "@/components/TrainingPull";
@@ -19,6 +19,20 @@ export default function Home() {
   const [activeId, setActiveId] = useState<(typeof TABS)[number]["id"]>("explorer");
   const active = TABS.find((t) => t.id === activeId) ?? TABS[0];
   const Active = active.Component;
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  function onTabKeyDown(e: KeyboardEvent<HTMLButtonElement>, index: number) {
+    let next = -1;
+    if (e.key === "ArrowRight") next = (index + 1) % TABS.length;
+    else if (e.key === "ArrowLeft") next = (index - 1 + TABS.length) % TABS.length;
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = TABS.length - 1;
+    else return;
+
+    e.preventDefault();
+    setActiveId(TABS[next].id);
+    tabRefs.current[next]?.focus();
+  }
 
   return (
     <main className="wrap">
@@ -36,14 +50,21 @@ export default function Home() {
       </header>
 
       <nav className="tabs" role="tablist" aria-label="Dashboard sections">
-        {TABS.map((t) => (
+        {TABS.map((t, i) => (
           <button
             key={t.id}
+            ref={(el) => {
+              tabRefs.current[i] = el;
+            }}
+            id={`tab-${t.id}`}
             type="button"
             role="tab"
             className="tab"
             aria-selected={t.id === activeId}
+            aria-controls={`panel-${t.id}`}
+            tabIndex={t.id === activeId ? 0 : -1}
             onClick={() => setActiveId(t.id)}
+            onKeyDown={(e) => onTabKeyDown(e, i)}
           >
             <span className="tab-num">{t.number}</span>
             {t.label}
@@ -51,7 +72,7 @@ export default function Home() {
         ))}
       </nav>
 
-      <section className="stage" role="tabpanel">
+      <section className="stage" role="tabpanel" id={`panel-${active.id}`} aria-labelledby={`tab-${active.id}`}>
         <Active />
       </section>
 

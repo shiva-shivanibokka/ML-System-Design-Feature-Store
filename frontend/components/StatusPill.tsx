@@ -4,24 +4,38 @@ import { useEffect, useState } from "react";
 type Status = "checking" | "ok" | "down";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:7860";
+const POLL_MS = 20_000;
 
-/** Pings /health once on mount. Cloud Run scales to zero when idle, so
- * "down" here just as often means "cold-starting" as it means broken —
- * the label reflects that rather than reading as an outage. */
+/** Pings /health on mount and then every POLL_MS until it reports ok. Cloud
+ * Run scales to zero when idle, so a cold start can take longer than a
+ * single check — polling means the pill self-corrects to "live" once the
+ * instance is up instead of being stuck on "waking up" forever. */
 export default function StatusPill() {
   const [status, setStatus] = useState<Status>("checking");
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`${BASE}/health`, { cache: "no-store" })
-      .then((r) => {
-        if (!cancelled) setStatus(r.ok ? "ok" : "down");
-      })
-      .catch(() => {
-        if (!cancelled) setStatus("down");
-      });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const check = () => {
+      fetch(`${BASE}/health`, { cache: "no-store" })
+        .then((r) => {
+          if (cancelled) return;
+          const ok = r.ok;
+          setStatus(ok ? "ok" : "down");
+          if (!ok) timer = setTimeout(check, POLL_MS);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setStatus("down");
+          timer = setTimeout(check, POLL_MS);
+        });
+    };
+    check();
+
     return () => {
       cancelled = true;
+      if (timer) clearTimeout(timer);
     };
   }, []);
 

@@ -1,5 +1,5 @@
 "use client";
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 const EDGE_PAD = 12;
 const POP_HALF_WIDTH = 140; // half of .pop's max-width, keeps it off-screen edges
@@ -15,6 +15,7 @@ export default function Tip({ text }: { text: string }) {
   const [pos, setPos] = useState<{ x: number; y: number; below: boolean } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const popId = useId();
+  const open = pos !== null;
 
   function show() {
     const r = btnRef.current?.getBoundingClientRect();
@@ -30,6 +31,21 @@ export default function Tip({ text }: { text: string }) {
   function hide() {
     setPos(null);
   }
+
+  // Popover is position:fixed from the trigger's rect, computed once on
+  // hover — re-run (or close) while scrolling/resizing so it doesn't detach
+  // from the "?" button on long/scrollable views.
+  useEffect(() => {
+    if (!open) return;
+    const update = () => show();
+    window.addEventListener("scroll", update, { passive: true, capture: true });
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   return (
     <span className="tip">

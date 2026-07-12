@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 interface ApiState<T> {
   data: T | null;
@@ -19,16 +19,26 @@ export function useApi<T>(initialLoading = true) {
     error: null,
   });
 
+  // Bumped on every run() call; a settling promise only updates state if it's
+  // still the most recent request — guards against a slow earlier response
+  // overwriting fresher state (e.g. a Cloud Run cold start racing a retry).
+  const gen = useRef(0);
+
   const run = useCallback((promise: Promise<T>) => {
+    const mine = ++gen.current;
     setState({ data: null, loading: true, error: null });
     promise.then(
-      (data) => setState({ data, loading: false, error: null }),
-      (err: unknown) =>
-        setState({
-          data: null,
-          loading: false,
-          error: err instanceof Error ? err.message : String(err),
-        })
+      (data) => {
+        if (mine === gen.current) setState({ data, loading: false, error: null });
+      },
+      (err: unknown) => {
+        if (mine === gen.current)
+          setState({
+            data: null,
+            loading: false,
+            error: err instanceof Error ? err.message : String(err),
+          });
+      }
     );
   }, []);
 
