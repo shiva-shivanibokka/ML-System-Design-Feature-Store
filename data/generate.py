@@ -1,7 +1,7 @@
 """
 data/generate.py
 ================
-Generates synthetic raw data and loads it into ClickHouse.
+Generates synthetic raw data and loads it into DuckDB/MotherDuck.
 
 Simulates three upstream warehouse tables:
   - raw_users            10,000 user profiles
@@ -20,25 +20,16 @@ import sys
 import uuid
 from datetime import datetime, timedelta
 
-import clickhouse_driver
 import numpy as np
+import pandas as pd
 import structlog
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from feature_store.connections import get_duckdb_client
+from feature_store.schema import apply_schema
+
 log = structlog.get_logger()
-
-# ---------------------------------------------------------------------------
-# Connection helpers
-# ---------------------------------------------------------------------------
-
-
-def get_client() -> clickhouse_driver.Client:
-    return clickhouse_driver.Client(
-        host=os.getenv("CLICKHOUSE_HOST", "localhost"),
-        port=int(os.getenv("CLICKHOUSE_PORT", "9000")),
-        database=os.getenv("CLICKHOUSE_DB", "feature_store"),
-        user=os.getenv("CLICKHOUSE_USER", "fs_user"),
-        password=os.getenv("CLICKHOUSE_PASSWORD", "fs_pass"),
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -164,76 +155,39 @@ def generate_support_tickets(users: list[dict], days: int) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# ClickHouse loaders
+# DuckDB loaders — bulk insert via registered DataFrames
 # ---------------------------------------------------------------------------
 
-CHUNK = 5_000
 
-
-def _chunks(lst: list, n: int):
-    for i in range(0, len(lst), n):
-        yield lst[i : i + n]
-
-
-def load_users(client: clickhouse_driver.Client, users: list[dict]) -> None:
-    log.info("loading_users_to_clickhouse", count=len(users))
-    rows = [
-        (
-            u["user_id"],
-            u["signup_date"],
-            u["country"],
-            u["plan_type"],
-            u["age_bucket"],
-        )
-        for u in users
-    ]
+def load_users(client, users: list[dict]) -> None:
+    log.info("loading_users_to_duckdb", count=len(users))
+    client.register("u_df", pd.DataFrame(users))
     client.execute(
-        "INSERT INTO raw_users (user_id, signup_date, country, plan_type, age_bucket) VALUES",
-        rows,
+        "INSERT INTO raw_users (user_id, signup_date, country, plan_type, age_bucket) "
+        "SELECT user_id, signup_date, country, plan_type, age_bucket FROM u_df"
     )
     log.info("users_loaded")
 
 
-def load_transactions(client: clickhouse_driver.Client, txns: list[dict]) -> None:
-    log.info("loading_transactions_to_clickhouse", count=len(txns))
-    for chunk in _chunks(txns, CHUNK):
-        rows = [
-            (
-                t["transaction_id"],
-                t["user_id"],
-                t["amount"],
-                t["category"],
-                t["status"],
-                t["event_time"],
-            )
-            for t in chunk
-        ]
-        client.execute(
-            "INSERT INTO raw_transactions "
-            "(transaction_id, user_id, amount, category, status, event_time) VALUES",
-            rows,
-        )
+def load_transactions(client, txns: list[dict]) -> None:
+    log.info("loading_transactions_to_duckdb", count=len(txns))
+    client.register("t_df", pd.DataFrame(txns))
+    client.execute(
+        "INSERT INTO raw_transactions "
+        "(transaction_id, user_id, amount, category, status, event_time) "
+        "SELECT transaction_id, user_id, amount, category, status, event_time FROM t_df"
+    )
     log.info("transactions_loaded")
 
 
-def load_tickets(client: clickhouse_driver.Client, tickets: list[dict]) -> None:
-    log.info("loading_tickets_to_clickhouse", count=len(tickets))
-    for chunk in _chunks(tickets, CHUNK):
-        rows = [
-            (
-                t["ticket_id"],
-                t["user_id"],
-                t["severity"],
-                t["resolved"],
-                t["event_time"],
-            )
-            for t in chunk
-        ]
-        client.execute(
-            "INSERT INTO raw_support_tickets "
-            "(ticket_id, user_id, severity, resolved, event_time) VALUES",
-            rows,
-        )
+def load_tickets(client, tickets: list[dict]) -> None:
+    log.info("loading_tickets_to_duckdb", count=len(tickets))
+    client.register("s_df", pd.DataFrame(tickets))
+    client.execute(
+        "INSERT INTO raw_support_tickets "
+        "(ticket_id, user_id, severity, resolved, event_time) "
+        "SELECT ticket_id, user_id, severity, resolved, event_time FROM s_df"
+    )
     log.info("tickets_loaded")
 
 
@@ -252,13 +206,14 @@ def main() -> None:
     random.seed(args.seed)
     np.random.seed(args.seed)
 
-    log.info("connecting_to_clickhouse")
-    client = get_client()
+    log.info("connecting_to_duckdb")
+    client = get_duckdb_client()
+    apply_schema(client)
 
-    # Truncate existing data for clean re-runs
+    # Clear existing data for clean re-runs
     for table in ["raw_users", "raw_transactions", "raw_support_tickets"]:
-        client.execute(f"TRUNCATE TABLE IF EXISTS {table}")
-    log.info("tables_truncated")
+        client.execute(f"DELETE FROM {table}")
+    log.info("tables_cleared")
 
     users = generate_users(args.users, args.days)
     txns = generate_transactions(users, args.days)
@@ -270,7 +225,7 @@ def main() -> None:
 
     # Verify counts
     for table in ["raw_users", "raw_transactions", "raw_support_tickets"]:
-        (count,) = client.execute(f"SELECT count() FROM {table}")[0]
+        (count,) = client.execute(f"SELECT count(*) FROM {table}")[0]
         log.info("table_loaded", table=table, rows=count)
 
     log.info("data_generation_complete")
