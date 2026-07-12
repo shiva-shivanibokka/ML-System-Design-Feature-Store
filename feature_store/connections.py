@@ -1,51 +1,75 @@
 """
 feature_store/connections.py
 ============================
-Shared connection factories for ClickHouse and Redis.
-Both return module-level singletons — safe for use inside FastAPI lifespan.
+Connection factories for the offline store (DuckDB / MotherDuck) and the
+online store (Redis / Upstash). Both are env-configured with local fallbacks
+so the project runs with zero cloud accounts for local development.
+
+Offline store:
+  - If MOTHERDUCK_TOKEN is set, connect to MotherDuck (`md:<db>`).
+  - Otherwise open a local DuckDB file (DUCKDB_PATH).
+DuckDB connections are not safe to share across threads; every _DuckClient.execute
+runs on a fresh cursor of the singleton connection, which IS thread-safe.
+
+Online store:
+  - redis.from_url(REDIS_URL). Upstash provides an rediss:// URL; local dev
+    defaults to redis://localhost:6379.
 """
+from __future__ import annotations
 
 import os
 from functools import lru_cache
 
-import clickhouse_driver
+import duckdb
 import redis as redis_lib
 import structlog
 
 log = structlog.get_logger()
 
 
-@lru_cache(maxsize=1)
-def get_clickhouse_client() -> clickhouse_driver.Client:
-    host = os.getenv("CLICKHOUSE_HOST", "localhost")
-    port = int(os.getenv("CLICKHOUSE_PORT", "9000"))
-    db = os.getenv("CLICKHOUSE_DB", "feature_store")
-    user = os.getenv("CLICKHOUSE_USER", "fs_user")
-    password = os.getenv("CLICKHOUSE_PASSWORD", "fs_pass")
+class _DuckClient:
+    """Thin wrapper giving DuckDB a clickhouse-driver-like .execute() surface."""
 
-    log.info("connecting_clickhouse", host=host, port=port, db=db)
-    client = clickhouse_driver.Client(
-        host=host,
-        port=port,
-        database=db,
-        user=user,
-        password=password,
-        connect_timeout=10,
-        send_receive_timeout=300,
-    )
-    return client
+    def __init__(self, conn: duckdb.DuckDBPyConnection) -> None:
+        self._conn = conn
+
+    def execute(self, sql: str, params: dict | list | None = None) -> list[tuple]:
+        cur = self._conn.cursor()
+        cur.execute(sql, params if params is not None else {})
+        try:
+            return cur.fetchall()
+        except duckdb.InvalidInputException:
+            return []  # statements without a result set (INSERT/DDL)
+
+    def register(self, name: str, df) -> None:
+        self._conn.register(name, df)
+
+    @property
+    def raw(self) -> duckdb.DuckDBPyConnection:
+        return self._conn
+
+
+@lru_cache(maxsize=1)
+def get_duckdb_client() -> _DuckClient:
+    token = os.getenv("MOTHERDUCK_TOKEN", "").strip()
+    db = os.getenv("DUCKDB_DATABASE", "feature_store")
+    if token:
+        log.info("connecting_motherduck", database=db)
+        conn = duckdb.connect(f"md:{db}", config={"motherduck_token": token})
+    else:
+        path = os.getenv("DUCKDB_PATH", "feature_store.duckdb")
+        log.info("connecting_duckdb_local", path=path)
+        conn = duckdb.connect(path)
+    return _DuckClient(conn)
 
 
 @lru_cache(maxsize=1)
 def get_redis_client() -> redis_lib.Redis:
-    host = os.getenv("REDIS_HOST", "localhost")
-    port = int(os.getenv("REDIS_PORT", "6379"))
-    log.info("connecting_redis", host=host, port=port)
-    return redis_lib.Redis(
-        host=host,
-        port=port,
-        db=0,
+    url = os.getenv("REDIS_URL", "redis://localhost:6379")
+    log.info("connecting_redis", url=url.split("@")[-1])  # never log credentials
+    return redis_lib.from_url(
+        url,
         decode_responses=True,
         socket_connect_timeout=5,
-        socket_timeout=2,
+        socket_timeout=5,
     )
