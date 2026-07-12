@@ -108,7 +108,8 @@ def run_materialization(feature_version: str = "v1") -> dict:
             log.error("batch_failed", start=start, error=str(exc))
 
     duration_ms = int((datetime.utcnow() - started_at).total_seconds() * 1000)
-    status = "success" if failed == 0 else ("partial" if processed > 0 else "failed")
+    total_failed = failed + validation_failures
+    status = "success" if total_failed == 0 else ("partial" if processed > 0 else "failed")
 
     # ── 3. Write audit log to the offline store ──────────────────────────────
     client.execute(
@@ -124,7 +125,7 @@ def run_materialization(feature_version: str = "v1") -> dict:
             "run_id": run_id,
             "v": feature_version,
             "proc": processed,
-            "failed": failed + validation_failures,
+            "failed": total_failed,
             "dur": duration_ms,
             "status": status,
             "err": None,
