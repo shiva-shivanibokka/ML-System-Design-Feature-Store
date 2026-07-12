@@ -1,0 +1,26 @@
+name: Materialize
+
+on:
+  schedule: [{ cron: "0 */6 * * *" }]
+  workflow_dispatch:
+
+env:
+  MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+  DUCKDB_DATABASE: ${{ secrets.DUCKDB_DATABASE }}
+  REDIS_URL: ${{ secrets.REDIS_URL }}
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.api.txt
+      - run: python materialization/materialize.py
+
+  keep-warm:
+    runs-on: ubuntu-latest
+    steps:
+      - run: curl -fsS "${{ secrets.HF_SPACE_URL }}/health" || true
