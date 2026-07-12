@@ -9,14 +9,14 @@ What is training-serving skew?
   a different input distribution than it was trained on → silent degradation.
 
 This module:
-  1. Reads training-time feature distributions from ClickHouse skew_snapshots
-  2. Samples current serving-time features from ClickHouse feature_history
+  1. Reads training-time feature distributions from DuckDB skew_snapshots
+  2. Samples current serving-time features from DuckDB feature_history
   3. Runs a KS (Kolmogorov-Smirnov) test per feature
   4. Flags features where KS p-value < 0.05 (statistically significant skew)
   5. Writes the serving-time snapshot to skew_snapshots for trend analysis
 
 The /skew-report API endpoint calls compute_skew_report().
-The Gradio Tab 3 reads this endpoint and renders histograms + KS results.
+The frontend Skew tab reads this endpoint and renders histograms + KS results.
 """
 
 from __future__ import annotations
@@ -29,8 +29,8 @@ import numpy as np
 import structlog
 from scipy import stats
 
-from feature_store.connections import get_clickhouse_client
-from feature_store.offline_store import FEATURE_COLS
+from feature_store.connections import get_duckdb_client
+from feature_store.features import FEATURE_COLS
 
 log = structlog.get_logger()
 
@@ -52,55 +52,52 @@ def _capture_serving_snapshot(client, feature_version: str) -> str:
     since = datetime.utcnow() - timedelta(days=SERVING_SAMPLE_DAYS)
     now = datetime.utcnow()
 
-    rows = []
     for col in FEATURE_COLS:
         result = client.execute(
             f"""
             SELECT
-                avg({col})             AS mean,
-                stddevPop({col})       AS std,
-                quantile(0.25)({col})  AS p25,
-                quantile(0.50)({col})  AS p50,
-                quantile(0.75)({col})  AS p75,
-                quantile(0.95)({col})  AS p95,
-                countIf(isNaN({col}) OR isNull({col})) / count() AS null_rate,
-                count()                AS sample_count
+                avg({col})              AS mean,
+                stddev_pop({col})       AS std,
+                quantile_cont({col}, 0.25) AS p25,
+                quantile_cont({col}, 0.50) AS p50,
+                quantile_cont({col}, 0.75) AS p75,
+                quantile_cont({col}, 0.95) AS p95,
+                (count(*) FILTER (WHERE {col} IS NULL OR isnan({col})))
+                    / greatest(count(*), 1) AS null_rate,
+                count(*)                AS sample_count
             FROM feature_history
-            WHERE feature_version = %(version)s
-              AND event_time >= %(since)s
+            WHERE feature_version = $version
+              AND event_time >= $since
             """,
             {"version": feature_version, "since": since},
         )
         if result:
             mean, std, p25, p50, p75, p95, null_rate, n = result[0]
-            rows.append(
-                (
-                    snapshot_id,
-                    col,
-                    feature_version,
-                    "serving",
-                    float(mean or 0),
-                    float(std or 0),
-                    float(p25 or 0),
-                    float(p50 or 0),
-                    float(p75 or 0),
-                    float(p95 or 0),
-                    float(null_rate or 0),
-                    int(n or 0),
-                    now,
-                )
+            client.execute(
+                """
+                INSERT INTO skew_snapshots
+                (snapshot_id, feature_name, feature_version, context,
+                 mean, std, p25, p50, p75, p95, null_rate, sample_count, captured_at)
+                VALUES
+                ($snapshot_id, $feature_name, $feature_version, $context,
+                 $mean, $std, $p25, $p50, $p75, $p95, $null_rate, $sample_count, $captured_at)
+                """,
+                {
+                    "snapshot_id": snapshot_id,
+                    "feature_name": col,
+                    "feature_version": feature_version,
+                    "context": "serving",
+                    "mean": float(mean or 0),
+                    "std": float(std or 0),
+                    "p25": float(p25 or 0),
+                    "p50": float(p50 or 0),
+                    "p75": float(p75 or 0),
+                    "p95": float(p95 or 0),
+                    "null_rate": float(null_rate or 0),
+                    "sample_count": int(n or 0),
+                    "captured_at": now,
+                },
             )
-
-    if rows:
-        client.execute(
-            """
-            INSERT INTO skew_snapshots
-            (snapshot_id, feature_name, feature_version, context,
-             mean, std, p25, p50, p75, p95, null_rate, sample_count, captured_at)
-            VALUES
-            """,
-            rows,
-        )
     return snapshot_id
 
 
@@ -171,11 +168,11 @@ def compute_skew_report(feature_version: str = "v1") -> list[dict[str, Any]]:
 
     Steps:
     1. Capture current serving-time snapshot
-    2. Load latest training-time snapshot from ClickHouse
+    2. Load latest training-time snapshot from DuckDB
     3. Run KS test per feature
     4. Return sorted report (flagged features first)
     """
-    client = get_clickhouse_client()
+    client = get_duckdb_client()
     log.info("computing_skew_report", version=feature_version)
 
     # ── 1. Capture fresh serving snapshot ────────────────────────────────────
@@ -188,10 +185,9 @@ def compute_skew_report(feature_version: str = "v1") -> list[dict[str, Any]]:
             feature_name, mean, std, p25, p50, p75, p95,
             null_rate, sample_count
         FROM skew_snapshots
-        WHERE feature_version = %(version)s
+        WHERE feature_version = $version
           AND context = 'training'
-        ORDER BY captured_at DESC
-        LIMIT 1 BY feature_name
+        QUALIFY row_number() OVER (PARTITION BY feature_name ORDER BY captured_at DESC) = 1
         """,
         {"version": feature_version},
     )
@@ -203,7 +199,7 @@ def compute_skew_report(feature_version: str = "v1") -> list[dict[str, Any]]:
             feature_name, mean, std, p25, p50, p75, p95,
             null_rate, sample_count
         FROM skew_snapshots
-        WHERE snapshot_id = %(sid)s
+        WHERE snapshot_id = $sid
         """,
         {"sid": serving_snapshot_id},
     )
