@@ -1,10 +1,7 @@
-from datetime import datetime
-
 import duckdb
 
 import materialization.materialize as mat
 from feature_store import offline_store as off
-from feature_store import online_store
 from feature_store.connections import _DuckClient
 from feature_store.schema import apply_schema
 

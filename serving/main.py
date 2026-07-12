@@ -222,7 +222,9 @@ async def health():
 
 @app.get("/lineage")
 async def full_lineage(feature_version: str = Query(default="v1")):
-    return await run_in_threadpool(get_full_lineage_graph, feature_version=feature_version)
+    return await run_in_threadpool(
+        get_full_lineage_graph, feature_version=feature_version
+    )
 
 
 @app.get("/features/{entity_id}", response_model=FeatureResponse)
@@ -294,7 +296,10 @@ async def get_features_batch(request: BatchFeatureRequest):
     on_demand_count = 0
     if misses:
         on_demand_results = await run_in_threadpool(
-            compute_on_demand_batch, get_duckdb_client(), misses, request.feature_version
+            compute_on_demand_batch,
+            get_duckdb_client(),
+            misses,
+            request.feature_version,
         )
         for eid, features in on_demand_results.items():
             if features is not None:
@@ -340,7 +345,9 @@ async def skew_report(feature_version: str = Query(default="v1")):
         return hit[1]
 
     try:
-        report = await run_in_threadpool(compute_skew_report, feature_version=feature_version)
+        report = await run_in_threadpool(
+            compute_skew_report, feature_version=feature_version
+        )
     except Exception as exc:
         log.error("skew_report_failed", error=str(exc))
         raise HTTPException(status_code=500, detail=str(exc))

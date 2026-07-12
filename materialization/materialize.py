@@ -109,7 +109,9 @@ def run_materialization(feature_version: str = "v1") -> dict:
 
     duration_ms = int((datetime.utcnow() - started_at).total_seconds() * 1000)
     total_failed = failed + validation_failures
-    status = "success" if total_failed == 0 else ("partial" if processed > 0 else "failed")
+    status = (
+        "success" if total_failed == 0 else ("partial" if processed > 0 else "failed")
+    )
 
     # ── 3. Write audit log to the offline store ──────────────────────────────
     client.execute(

@@ -17,7 +17,7 @@ dagshub==0.3.35
 pandas==2.2.2
 numpy==1.26.4
 scipy==1.13.0
-pyarrow==16.1.0
+pyarrow==15.0.2  # mlflow 2.13 requires pyarrow<16
 Faker==25.2.0
 
 # Observability

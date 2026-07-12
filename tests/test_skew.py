@@ -82,7 +82,9 @@ class TestKSTest:
         encoder cannot serialize numpy scalars, which 500s /skew-report."""
         import json
 
-        result = _run_ks_test(self._make_stats(5.0, 1.0), self._make_stats(50.0, 1.0), "f")
+        result = _run_ks_test(
+            self._make_stats(5.0, 1.0), self._make_stats(50.0, 1.0), "f"
+        )
         assert type(result["flagged"]) is bool
         json.dumps(result)  # raises if any numpy scalar leaked in
 
@@ -139,17 +141,44 @@ def test_compute_skew_report_end_to_end_with_seeded_snapshots(monkeypatch):
 
     now = datetime.utcnow()
     cols = [
-        "entity_id", "entity_type", "feature_version", "event_time",
-        "txn_count_7d", "txn_count_30d", "txn_count_90d",
-        "total_spend_7d", "total_spend_30d", "total_spend_90d",
-        "avg_txn_amount_30d", "failed_txn_rate_30d", "days_since_last_txn",
-        "open_tickets", "ticket_rate_30d", "account_age_days", "plan_encoded",
+        "entity_id",
+        "entity_type",
+        "feature_version",
+        "event_time",
+        "txn_count_7d",
+        "txn_count_30d",
+        "txn_count_90d",
+        "total_spend_7d",
+        "total_spend_30d",
+        "total_spend_90d",
+        "avg_txn_amount_30d",
+        "failed_txn_rate_30d",
+        "days_since_last_txn",
+        "open_tickets",
+        "ticket_rate_30d",
+        "account_age_days",
+        "plan_encoded",
         "computed_at",
     ]
     rows = [
         (
-            i, "user", "v1", now - timedelta(hours=1),
-            10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 0.0, 1.0, 0.0, 0.0, 10.0, 2.0,
+            i,
+            "user",
+            "v1",
+            now - timedelta(hours=1),
+            10.0,
+            10.0,
+            10.0,
+            10.0,
+            10.0,
+            10.0,
+            10.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            10.0,
+            2.0,
             now,
         )
         for i in range(1, 6)

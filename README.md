@@ -248,4 +248,4 @@ A full self-audit of this codebase (correctness, security, concurrency, performa
 
 ## License
 
-No license file yet — this repo is currently **all rights reserved** by default. Add a `LICENSE` (e.g. MIT) before reuse or contribution.
+[MIT](LICENSE) © 2026 Shivani Bokka.
