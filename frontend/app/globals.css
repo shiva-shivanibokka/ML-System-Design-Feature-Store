@@ -17,9 +17,9 @@
   --panel: rgba(18, 22, 31, 0.72);
   --panel-solid: #12161f;
 
-  --text: #e7eaf0;
-  --text-dim: #8a93a6;
-  --text-faint: #565f74;
+  --text: #f0f2f6;
+  --text-dim: #b7c0d1;
+  --text-faint: #7c8599;
 
   --amber: #f2a93b;
   --amber-dim: rgba(242, 169, 59, 0.14);
@@ -35,8 +35,10 @@
   --radius: 5px;
   --radius-lg: 14px;
   --gutter: clamp(1rem, 5vw, 192px);
-  --font-sans: var(--font-inter), -apple-system, "Segoe UI", system-ui, sans-serif;
-  --font-mono: var(--font-plex-mono), ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  /* --font-display, --font-body, --font-mono are registered by next/font on
+     <html> in app/layout.tsx (Space Grotesk, Inter, JetBrains Mono). This
+     alias just appends system fallbacks for the body copy face. */
+  --font-sans: var(--font-body), -apple-system, "Segoe UI", system-ui, sans-serif;
 
   color-scheme: dark;
 }
@@ -58,8 +60,8 @@ body {
     var(--bg);
   color: var(--text);
   font-family: var(--font-sans);
-  font-size: 15px;
-  line-height: 1.5;
+  font-size: 17px;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -162,9 +164,9 @@ table {
   width: 100%;
 }
 .hero h1 {
-  font-family: var(--font-mono);
+  font-family: var(--font-display), var(--font-sans);
   font-weight: 700;
-  font-size: clamp(2rem, 5.2vw, 3.4rem);
+  font-size: clamp(2.2rem, 5.4vw, 3.7rem);
   line-height: 1.05;
   letter-spacing: -0.01em;
   margin: 0 0 0.85rem;
@@ -176,8 +178,8 @@ table {
 .hero p {
   color: var(--text-dim);
   width: 100%;
-  font-size: clamp(0.92rem, 1.3vw, 1.02rem);
-  line-height: 1.7;
+  font-size: clamp(1.02rem, 1.4vw, 1.15rem);
+  line-height: 1.75;
 }
 .hero p strong {
   color: var(--text);
@@ -318,24 +320,24 @@ table {
 .stack-title {
   display: flex;
   align-items: center;
-  font-family: var(--font-mono);
-  font-size: 13px;
+  font-family: var(--font-display), var(--font-sans);
+  font-size: 15px;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text);
 }
 .stack-sub {
-  font-size: 13.5px;
+  font-size: 15px;
   color: var(--text-dim);
   width: 100%;
-  line-height: 1.6;
+  line-height: 1.7;
 }
 
 /* ---- chip ---- */
 .chip {
   font-family: var(--font-mono);
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   color: var(--cyan);
   border: 1px solid rgba(69, 208, 196, 0.4);
   border-radius: 6px;
@@ -350,6 +352,10 @@ table {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  transition: border-color 0.18s ease;
+}
+.card:hover {
+  border-color: var(--border-strong);
 }
 .card-head {
   display: flex;
@@ -363,7 +369,7 @@ table {
   display: inline-flex;
   align-items: center;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 13px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-dim);
@@ -372,27 +378,33 @@ table {
   padding: 18px;
 }
 
-/* ---- tables ---- */
-.table-wrap {
+/* ---- tables ----
+   .table-wrap is the default: no forced scroll, table sits at 100% width
+   and headers are allowed to wrap onto a second line rather than forcing
+   the table wider than its container. Only tables that can genuinely grow
+   wide (e.g. a dynamic column per feature) opt into .scroll-x, and only
+   then do they get a horizontal scrollbar — and only when content actually
+   overflows, never as empty trailing space. */
+.table-wrap.scroll-x {
   overflow-x: auto;
 }
 .data-table {
-  font-size: 13.5px;
+  width: 100%;
+  font-size: 15px;
 }
 .data-table th {
   text-align: left;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-faint);
   font-weight: 500;
-  padding: 10px 18px;
+  padding: 11px 18px;
   border-bottom: 1px solid var(--border);
-  white-space: nowrap;
 }
 .data-table td {
-  padding: 10px 18px;
+  padding: 11px 18px;
   border-bottom: 1px solid var(--border);
   color: var(--text);
   vertical-align: top;
@@ -518,7 +530,7 @@ table {
 }
 .tile .tile-v {
   font-family: var(--font-mono);
-  font-size: 1.5rem;
+  font-size: 1.65rem;
   font-weight: 700;
   color: var(--text);
   line-height: 1.15;
@@ -528,11 +540,11 @@ table {
   align-items: center;
   justify-content: center;
   font-family: var(--font-mono);
-  font-size: 0.63rem;
+  font-size: 0.7rem;
   color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  margin-top: 0.3rem;
+  margin-top: 0.35rem;
 }
 
 /* ---- readout: single centered highlight stat ---- */
@@ -545,14 +557,14 @@ table {
 }
 .readout .readout-lbl {
   color: var(--text-dim);
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   font-family: var(--font-mono);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
 .readout .readout-big {
   font-family: var(--font-mono);
-  font-size: clamp(1.7rem, 4vw, 2.4rem);
+  font-size: clamp(1.9rem, 4.2vw, 2.6rem);
   font-weight: 700;
   color: var(--text);
   line-height: 1.15;
@@ -568,7 +580,7 @@ table {
   grid-template-columns: 150px 1fr 70px;
   gap: 0.65rem;
   align-items: center;
-  font-size: 0.78rem;
+  font-size: 0.85rem;
 }
 .bar-row .bar-name {
   font-family: var(--font-mono);
@@ -638,19 +650,19 @@ table {
 .callout {
   border-left: 3px solid var(--amber);
   background: var(--amber-dim);
-  padding: 0.75rem 1rem;
+  padding: 0.85rem 1.1rem;
   border-radius: 0 6px 6px 0;
-  font-size: 0.85rem;
+  font-size: 0.95rem;
   color: var(--text-dim);
-  line-height: 1.6;
+  line-height: 1.7;
 }
 .callout strong {
   color: var(--text);
 }
 .note {
   color: var(--text-dim);
-  font-size: 0.85rem;
-  line-height: 1.6;
+  font-size: 0.95rem;
+  line-height: 1.7;
 }
 
 /* ---- forms (Training Pull) ---- */
@@ -661,7 +673,7 @@ table {
 }
 .field-label {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-faint);
@@ -777,7 +789,13 @@ table {
   fill: var(--text);
 }
 
-/* ---- tooltip: small "?" help popover on headers, tiles, columns ---- */
+/* ---- tooltip: small "?" help popover on headers, tiles, columns ----
+   The popover is `position: fixed` and positioned in JS from the trigger's
+   getBoundingClientRect() (see components/Tip.tsx), not `position:
+   absolute` inside the document flow. That's deliberate: an absolute
+   popover inside a table wrapped in `overflow-x: auto` gets clipped,
+   because a horizontal-scroll container also clips vertical overflow.
+   Fixed positioning escapes every ancestor's overflow/scroll box. */
 .tip {
   position: relative;
   display: inline-flex;
@@ -785,74 +803,84 @@ table {
   margin-left: 0.4rem;
 }
 .tip > .q {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   display: grid;
   place-items: center;
   cursor: help;
-  font-size: 0.65rem;
+  font-size: 0.7rem;
   font-weight: 700;
   font-family: var(--font-mono);
   color: var(--cyan);
   background: var(--cyan-dim);
   border: 1px solid rgba(69, 208, 196, 0.45);
+  padding: 0;
+  line-height: 1;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.tip > .q:hover,
+.tip > .q:focus-visible {
+  background: var(--cyan);
+  color: var(--bg);
 }
 .tip .pop {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%) translateY(4px);
+  position: fixed;
+  transform: translate(-50%, -100%);
   width: max-content;
-  max-width: 260px;
-  padding: 0.6rem 0.7rem;
+  max-width: 280px;
+  padding: 0.65rem 0.8rem;
   border-radius: 8px;
-  z-index: 20;
+  z-index: 9999;
   background: var(--panel-solid);
   border: 1px solid var(--border-strong);
   color: var(--text);
-  font-size: 0.78rem;
+  font-size: 0.88rem;
   font-weight: 400;
   text-transform: none;
   letter-spacing: normal;
-  line-height: 1.45;
-  box-shadow: 0 14px 40px -12px rgba(0, 0, 0, 0.85);
-  opacity: 0;
-  visibility: hidden;
-  transition: all 0.16s ease;
+  line-height: 1.5;
+  box-shadow: 0 14px 40px -12px rgba(0, 0, 0, 0.9);
   pointer-events: none;
 }
-.tip:hover .pop,
-.tip:focus-within .pop {
-  opacity: 1;
-  visibility: visible;
-  transform: translateX(-50%) translateY(0);
+.tip .pop.pop-below {
+  transform: translate(-50%, 10px);
 }
 
-/* ---- about tab ---- */
+/* ---- about tab ----
+   Deliberately unbounded: no max-height/overflow-y here. This tab is long
+   by design (it's the write-up), and must scroll with the natural page
+   flow inside .stage, never be clipped or get its own scroll box. */
 .about {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 .about h3 {
-  font-family: var(--font-mono);
-  font-size: 13px;
+  font-family: var(--font-display), var(--font-sans);
+  font-size: 15px;
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
   color: var(--text);
+}
+.about h4 {
+  font-family: var(--font-sans);
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--text);
+  margin-top: 4px;
 }
 .about p,
 .about li {
   color: var(--text-dim);
-  font-size: 13.5px;
-  line-height: 1.7;
+  font-size: 15.5px;
+  line-height: 1.75;
 }
 .about ul {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   padding-left: 0;
 }
 .about li strong {
@@ -865,7 +893,7 @@ table {
   align-items: center;
   gap: 0.5rem;
   font-family: var(--font-mono);
-  font-size: 0.78rem;
+  font-size: 0.85rem;
   color: var(--text-dim);
 }
 .about-flow .arrow {

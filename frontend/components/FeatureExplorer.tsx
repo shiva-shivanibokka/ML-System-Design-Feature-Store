@@ -86,7 +86,9 @@ export default function FeatureExplorer() {
                       {humanize(f.feature_name)}
                     </td>
                     <td className="num">{f.dtype}</td>
-                    <td className="mono">{f.source_table}</td>
+                    <td className="mono" title={f.source_table}>
+                      {humanize(f.source_table)}
+                    </td>
                     <td>{f.owner}</td>
                     <td>
                       {f.tags.map((t) => (

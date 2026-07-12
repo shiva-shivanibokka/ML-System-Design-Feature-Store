@@ -117,7 +117,7 @@ export default function LineageGraph() {
                   }
                 />
                 <text x={39} y={19} textAnchor="middle" className="lineage-node-label">
-                  {truncate(n.type === "feature" ? humanize(n.id) : n.id, 12)}
+                  {truncate(humanize(n.id), 12)}
                 </text>
                 <title>{n.id}</title>
               </g>

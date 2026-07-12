@@ -12,6 +12,7 @@ const TOK: Record<string, string> = {
   id: "ID",
   ks: "KS",
   pvalue: "p-value",
+  v1: "v1",
 };
 
 export function humanize(name: string): string {

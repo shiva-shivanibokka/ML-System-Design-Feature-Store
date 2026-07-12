@@ -106,7 +106,7 @@ export default function TrainingPull() {
                   </div>
                 </div>
               </div>
-              <div className="table-wrap">
+              <div className="table-wrap scroll-x">
                 <table className="data-table">
                   <thead>
                     <tr>
