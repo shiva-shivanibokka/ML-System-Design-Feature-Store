@@ -54,3 +54,7 @@ htmlcov/
 
 # SDD scratch
 .superpowers/
+
+# DuckDB local store
+*.duckdb
+*.duckdb.wal
