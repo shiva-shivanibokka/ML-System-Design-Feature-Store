@@ -4,14 +4,18 @@ A production-grade feature store built to the same architectural pattern as **Ub
 
 Solves the **#1 silent production bug in ML systems**: training-serving skew caused by features computed differently at training time vs serving time. And it runs entirely on **free tiers** — no paid infra, no credit card required to fork and deploy your own copy.
 
+**Live demo:**
+- Dashboard: https://ml-feature-store-shiv-a.vercel.app
+- API: https://feature-store-api-548930096299.us-central1.run.app (`/docs` for the OpenAPI schema)
+
 ---
 
 ## Architecture
 
 ```
 ┌────────────────────────┐        ┌──────────────────────────────────────┐
-│  Vercel (Next.js)      │──HTTP──▶│  Hugging Face Spaces (Docker)        │
-│  Dashboard: explorer,  │        │  FastAPI feature server, port 7860   │
+│  Vercel (Next.js)      │──HTTP──▶│  Google Cloud Run (Docker)           │
+│  Dashboard: explorer,  │        │  FastAPI feature server, $PORT/8080  │
 │  training pull, skew,  │◀───────│  Dual-path: Redis batch + on-demand  │
 │  materialization log   │  JSON  │  DuckDB query                        │
 └────────────────────────┘        └───────┬───────────────┬─────────────┘
@@ -20,7 +24,7 @@ Solves the **#1 silent production bug in ML systems**: training-serving skew cau
                                            │               │
                                            ▼               ▼
                               ┌────────────────────┐  ┌──────────────────┐
-                              │  MotherDuck         │  │  Upstash Redis   │
+                              │  MotherDuck         │  │  Aiven Valkey    │
                               │  (hosted DuckDB)    │  │  hash-per-entity │
                               │  feature_history,    │  │  HGETALL <2ms    │
                               │  registry, lineage,  │  └──────────────────┘
@@ -35,9 +39,9 @@ Solves the **#1 silent production bug in ML systems**: training-serving skew cau
           ┌───────────────────────┐          ┌──────────────────────────┐
           │  GitHub Actions        │          │  GitHub Actions          │
           │  materialize.yml       │          │  train.yml (dispatch)    │
-          │  cron 6h: backfill +   │          │  PIT training dataset →  │
-          │  materialize + keep-   │          │  LightGBM → DagsHub      │
-          │  warm ping to HF Space │          │  MLflow tracking         │
+          │  cron 6h: materialize  │          │  PIT training dataset →  │
+          │  + Cloud Run keep-warm │          │  LightGBM → MLflow       │
+          │  ping                  │          │  tracking                │
           └───────────────────────┘          └──────────────────────────┘
 ```
 
@@ -50,10 +54,10 @@ The single biggest correctness win in this design: feature computation lives in 
 | Component | Service | Free-tier limit |
 |---|---|---|
 | Offline store | **MotherDuck** (hosted DuckDB) | 10 GB storage / 10 compute-hours per month |
-| Online store | **Upstash Redis** | 256 MB / 500K commands per month |
-| Feature server | **Hugging Face Spaces** (Docker) | 2 vCPU / 16 GB RAM, sleeps when idle |
+| Online store | **Aiven Valkey** (Redis-compatible) | 1 GB |
+| Backend | **Google Cloud Run** | 2M requests / month |
 | Frontend | **Vercel** (Hobby plan) | Unlimited personal projects, generous bandwidth |
-| Experiment tracking | **DagsHub** (hosted MLflow) | Free public repo with MLflow tracking server |
+| Experiment tracking | **MLflow** (local, DagsHub-ready) | Free — runs against `./mlruns` in this demo |
 | Batch jobs / CI | **GitHub Actions** | 2,000 free minutes/month on public repos |
 
 No Supabase, no Fly.io, no Render, no paid databases. Everything above has a permanent free tier.
@@ -74,10 +78,10 @@ The offline store is **MotherDuck** (DuckDB hosted in the cloud). Training label
 If a feature's logic ever changes, it changes in one file and every consumer picks it up identically. This is what actually prevents training-serving skew — most tutorials just describe the problem; this repo structurally rules it out.
 
 ### 3. Point-in-Time Leakage, Demonstrated as a Bug
-`training/train.py` includes a deliberate **label leakage demonstration**: it first trains on naively-joined (leaky) features and shows the inflated AUC, then retrains on the PIT-correct dataset and shows the honest number. This is the exact question interviewers at Uber/DoorDash ask: "what is training-serving skew, and how does a feature store prevent it?"
+`training/train.py` includes a deliberate **label leakage demonstration**: it first trains on naively-joined (leaky) features and shows the inflated AUC (approaching ~1.0, then collapsing under honest evaluation), then retrains on the PIT-correct dataset and reports the honest number (ROC-AUC ≈ 0.98). This is the exact question interviewers at Uber/DoorDash ask: "what is training-serving skew, and how does a feature store prevent it?" The same training run also snapshots the feature distribution that the Skew Report later compares live serving traffic against.
 
 ### 4. Dual-Path Serving
-- **Batch path**: pre-materialized Redis hash, `HGETALL` in <2ms
+- **Batch path**: pre-materialized Redis (Valkey) hash, `HGETALL` in <2ms
 - **On-demand path**: DuckDB/MotherDuck query for cold-start entities, ~20ms
 - Every request logs which path was taken and its latency; the dashboard's materialization tab surfaces the difference.
 
@@ -100,12 +104,12 @@ Every test in `tests/` runs against in-memory DuckDB and `fakeredis` — no live
 | Layer | Tool | Why |
 |---|---|---|
 | Offline store | **MotherDuck (DuckDB)** | Free-tier hosted analytical DB with native `ASOF JOIN` |
-| Online store | **Upstash Redis** | Serverless, URL-configured, hash-per-entity, sub-2ms reads |
-| Feature server | **FastAPI** on **Hugging Face Spaces** | Dual-path serving with latency logging, Docker Space |
+| Online store | **Aiven Valkey** | Redis-compatible, URL-configured, hash-per-entity, sub-2ms reads |
+| Backend | **FastAPI** on **Google Cloud Run** | Dual-path serving with latency logging, container from the root `Dockerfile` |
 | Frontend | **Next.js (App Router) + Recharts** on **Vercel** | Dashboard: explorer, training pull, skew, materialization log |
 | Feature validation | **Pandera** | Schema enforcement at write time |
 | Skew detection | **SciPy KS test** | Per-feature statistical comparison |
-| Training | **LightGBM** + **MLflow (DagsHub)** | PIT-correct training + hosted experiment tracking |
+| Training | **LightGBM** + **MLflow** | PIT-correct training + experiment tracking |
 | Batch jobs | **GitHub Actions** (cron + manual dispatch) | Scheduled materialize, keep-warm ping, on-demand training |
 | Observability | **structlog** JSON logs | Structured, searchable by request_id |
 
@@ -132,46 +136,50 @@ python materialization/backfill.py --days 90
 python materialization/materialize.py
 
 # 6. Start the feature server
-uvicorn serving.main:app --port 7860
+uvicorn serving.main:app --port 8080
 
 # 7. In another shell, start the dashboard
 cd frontend && npm install && npm run dev
 ```
 
-Feature API docs: `http://localhost:7860/docs`. Dashboard: `http://localhost:3000`.
+Feature API docs: `http://localhost:8080/docs`. Dashboard: `http://localhost:3000`.
 
-If you want a local Redis instead of pointing `REDIS_URL` at Upstash: `docker run -p 6379:6379 redis:7-alpine`.
+If you want a local Redis instead of pointing `REDIS_URL` at a hosted Valkey instance: `docker run -p 6379:6379 redis:7-alpine`.
 
 ---
 
 ## Deploy Your Own
 
-### Backend — Hugging Face Space
-1. Create a new **Docker** Space at huggingface.co/new-space.
-2. `git remote add space https://huggingface.co/spaces/<user>/<space>` and `git push space main`. HF auto-detects the root `Dockerfile` (listens on port 7860).
-3. In the Space's **Settings → Variables and secrets**, set: `MOTHERDUCK_TOKEN`, `REDIS_URL`, `ALLOWED_ORIGINS`, `DUCKDB_DATABASE`.
-4. Optionally copy `README_HF.md` over the Space's `README.md` for the HF frontmatter (title/emoji/colors).
+### Backend — Google Cloud Run
+```bash
+gcloud run deploy feature-store-api \
+  --source . \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --env-vars-file .env.yaml
+```
+`--source .` builds the root `Dockerfile` (Cloud Run backend image, listens on `$PORT`/8080) via Cloud Build and deploys it. `.env.yaml` (not committed) should set `MOTHERDUCK_TOKEN`, `REDIS_URL`, `DUCKDB_DATABASE`, and `ALLOWED_ORIGINS`. Alternatively set the same vars one at a time with `--set-env-vars KEY=value`.
 
 ### Seed the stores (one-time, required)
 A fresh deploy has empty stores, so the API returns 404s / empty tables until you seed once. Point your local env at the cloud services (set `MOTHERDUCK_TOKEN`, `DUCKDB_DATABASE`, `REDIS_URL` in `.env`) and run:
 ```bash
-python data/generate.py                    # raw tables → MotherDuck
+python data/generate.py                       # raw tables → MotherDuck
 python materialization/backfill.py --days 90   # feature_history snapshots
-python materialization/materialize.py      # latest features → Upstash Redis
+python materialization/materialize.py          # latest features → Aiven Valkey
 ```
-After this the scheduled `materialize.yml` keeps the online store fresh every 6h. Run `train.yml` (or `python training/train.py` with the DagsHub env vars) once to populate the model registry and the training-time skew baseline.
+After this the scheduled `materialize.yml` keeps the online store synced and Cloud Run warm. Run `train.yml` (or `python training/train.py`) once to populate the model registry and the training-time skew baseline.
 
 ### Frontend — Vercel
-1. Import the repo into Vercel.
+1. Import the repo into Vercel (GitHub-connected, auto-deploys on push).
 2. Set **Root Directory = `frontend`**.
-3. Add env var `NEXT_PUBLIC_API_URL = https://<your-space>.hf.space`.
-4. After the first deploy, set the backend's `ALLOWED_ORIGINS` (Space secret) to your Vercel domain, e.g. `https://<your-app>.vercel.app`.
+3. Add env var `NEXT_PUBLIC_API_URL = <your Cloud Run service URL>`.
+4. After the first deploy, set the backend's `ALLOWED_ORIGINS` (Cloud Run env var) to your Vercel domain, e.g. `https://<your-app>.vercel.app`.
 
 ### Batch jobs — GitHub Actions
 Add these repo secrets (Settings → Secrets and variables → Actions):
-- `MOTHERDUCK_TOKEN`, `REDIS_URL` — used by `materialize.yml` (scheduled every 6h) and its keep-warm ping
-- `HF_SPACE_URL` — the Space's public URL, used for the keep-warm ping
-- `MLFLOW_TRACKING_URI`, `MLFLOW_TRACKING_USERNAME`, `MLFLOW_TRACKING_PASSWORD` — used by `train.yml` (manual dispatch) for DagsHub-hosted MLflow
+- `MOTHERDUCK_TOKEN`, `DUCKDB_DATABASE`, `REDIS_URL` — used by `materialize.yml` (scheduled every 6h) and `train.yml`
+- `CLOUD_RUN_URL` — the Cloud Run service's public URL, used for the keep-warm ping in `materialize.yml`
+- `MLFLOW_TRACKING_URI`, `MLFLOW_TRACKING_USERNAME`, `MLFLOW_TRACKING_PASSWORD` — optional, used by `train.yml` for hosted MLflow tracking (e.g. DagsHub); omit to log to `./mlruns` in the runner
 
 ---
 
@@ -211,10 +219,9 @@ ML-System-Design-Feature-Store/
 ├── tests/                         # Infra-free: in-memory DuckDB + fakeredis
 ├── .github/workflows/
 │   ├── ci.yml                     # Lint + test + Docker build
-│   ├── materialize.yml            # Scheduled backfill/materialize + keep-warm
+│   ├── materialize.yml            # Scheduled materialize + Cloud Run keep-warm
 │   └── train.yml                  # Manual-dispatch training run
-├── Dockerfile                     # HF Spaces backend image (root file, port 7860)
-├── README_HF.md                   # HF Space frontmatter/README
+├── Dockerfile                     # Cloud Run backend image ($PORT/8080)
 ├── requirements.api.txt           # Backend runtime deps
 └── requirements.txt               # Full dev deps (API + training + tooling)
 ```
@@ -231,7 +238,7 @@ For each `(entity, label_timestamp)` pair in the training set, DuckDB's `ASOF JO
 
 **Offline vs Online Store**
 - Offline (MotherDuck): historical feature values, used for training. Append-only, supports time-travel queries via `ASOF JOIN`.
-- Online (Upstash Redis): latest feature values per entity, used for serving. Sub-millisecond access via `HGETALL`.
+- Online (Aiven Valkey): latest feature values per entity, used for serving. Sub-millisecond access via `HGETALL`.
 
 **Feature Materialization**
 The scheduled GitHub Actions job that copies the latest offline store values into the online store. Without this, the online store would serve stale features.
@@ -243,4 +250,4 @@ Features are tagged with a version (`v1`, `v2`, ...). Version bumps are required
 
 ## Known Trade-offs
 
-This is a portfolio/demo system, and a few things are deliberately out of scope: endpoints are public read-only (no auth) since the point is to demonstrate the feature-store architecture, not build an auth layer; the HF Space's disk is ephemeral by design (all durable state lives in MotherDuck/Upstash, never on the Space filesystem); and the backend runs a single uvicorn worker on purpose (see the `Dockerfile` comment) rather than scaling workers, since the whole stack is sized for free-tier compute-hours, not production traffic.
+This is a portfolio/demo system, and a few things are deliberately out of scope: endpoints are public read-only (no auth) since the point is to demonstrate the feature-store architecture, not build an auth layer; Cloud Run's container filesystem is ephemeral by design (all durable state lives in MotherDuck/Aiven Valkey, never on the container filesystem); and the backend runs a single uvicorn worker on purpose (see the `Dockerfile` comment) rather than scaling workers, since the whole stack is sized for free-tier compute-hours, not production traffic.
