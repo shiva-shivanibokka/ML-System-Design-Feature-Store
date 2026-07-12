@@ -44,7 +44,8 @@ CREATE TABLE IF NOT EXISTS feature_history (
     ticket_rate_30d     DOUBLE,
     account_age_days    DOUBLE,
     plan_encoded        DOUBLE,
-    computed_at         TIMESTAMP DEFAULT now()
+    computed_at         TIMESTAMP DEFAULT now(),
+    PRIMARY KEY (entity_id, feature_version, event_time)
 );
 
 CREATE TABLE IF NOT EXISTS feature_registry (

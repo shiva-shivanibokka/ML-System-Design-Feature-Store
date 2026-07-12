@@ -67,7 +67,7 @@ def feature_select_sql(entity_filter: str = "") -> str:
         coalesce(t.avg_txn_amount_30d, 0)::DOUBLE                    AS avg_txn_amount_30d,
         coalesce(t.failed_txn_rate_30d, 0)::DOUBLE                   AS failed_txn_rate_30d,
 
-        coalesce(date_diff('day', t.last_success_txn, $snapshot), 0)::DOUBLE
+        coalesce(date_diff('day', t.last_success_txn, $snapshot), 9999)::DOUBLE
                                                                       AS days_since_last_txn,
 
         coalesce(sk.open_tickets, 0)::DOUBLE                         AS open_tickets,
@@ -137,7 +137,7 @@ def compute_and_store(
         + ")"
     )
     client.execute(
-        f"INSERT INTO feature_history {insert_cols} " + feature_select_sql(),
+        f"INSERT OR IGNORE INTO feature_history {insert_cols} " + feature_select_sql(),
         params,
     )
     rows = client.execute(

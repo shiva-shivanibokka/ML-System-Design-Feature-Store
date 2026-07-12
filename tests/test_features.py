@@ -53,6 +53,46 @@ def test_compute_and_store_counts_windows_correctly():
     assert row[3] == 2.0  # pro -> 2
 
 
+def test_days_since_last_txn_never_transacted_uses_sentinel():
+    client = _DuckClient(duckdb.connect(":memory:"))
+    apply_schema(client)
+    now = datetime(2024, 6, 1)
+    # User with zero transactions ever.
+    client.execute(
+        "INSERT INTO raw_users VALUES (2, DATE '2024-01-01', 'US', 'free', '25-34', now())"
+    )
+    features.compute_and_store(client, snapshot_time=now, feature_version="v1")
+    row = client.execute(
+        "SELECT days_since_last_txn FROM feature_history WHERE entity_id = 2"
+    )[0]
+    assert row[0] == 9999.0
+
+
+def test_days_since_last_txn_recent_txn_is_near_zero():
+    client = _DuckClient(duckdb.connect(":memory:"))
+    now = _seed(client)
+    features.compute_and_store(client, snapshot_time=now, feature_version="v1")
+    row = client.execute(
+        "SELECT days_since_last_txn FROM feature_history WHERE entity_id = 1"
+    )[0]
+    # Most recent successful txn in _seed is 1 day before `now`.
+    assert row[0] == 1.0
+
+
+def test_compute_and_store_is_idempotent_for_same_snapshot():
+    client = _DuckClient(duckdb.connect(":memory:"))
+    now = _seed(client)
+    n1 = features.compute_and_store(client, snapshot_time=now, feature_version="v1")
+    n2 = features.compute_and_store(client, snapshot_time=now, feature_version="v1")
+    assert n1 == n2 == 1
+    (count,) = client.execute(
+        "SELECT count(*) FROM feature_history WHERE entity_id = 1 "
+        "AND feature_version = 'v1' AND event_time = $t",
+        {"t": now},
+    )[0]
+    assert count == 1
+
+
 def test_on_demand_matches_stored_features():
     client = _DuckClient(duckdb.connect(":memory:"))
     now = _seed(client)
