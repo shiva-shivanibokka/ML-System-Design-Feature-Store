@@ -85,7 +85,9 @@ class TestKSTest:
         result = _run_ks_test(
             self._make_stats(5.0, 1.0), self._make_stats(50.0, 1.0), "f"
         )
-        assert type(result["flagged"]) is bool
+        # numpy.bool_ is NOT a subclass of bool, so isinstance(..., bool) is False
+        # for a leaked numpy scalar — exactly what this guards against.
+        assert isinstance(result["flagged"], bool)
         json.dumps(result)  # raises if any numpy scalar leaked in
 
 
