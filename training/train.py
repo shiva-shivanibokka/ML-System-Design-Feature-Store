@@ -10,7 +10,7 @@ Steps:
   4. Train LightGBM on PIT-correct features
   5. Track experiment with MLflow (params, metrics, feature importances)
   6. Register model in MLflow Model Registry
-  7. Save training-time feature distribution snapshot to ClickHouse
+  7. Save training-time feature distribution snapshot to DuckDB
      (used later by skew detection to compare against serving distributions)
 
 Usage:
@@ -41,21 +41,32 @@ from sklearn.model_selection import train_test_split
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from feature_store.connections import get_clickhouse_client
+from feature_store.connections import get_duckdb_client
 from feature_store.offline_store import (
     FEATURE_COLS,
     get_feature_stats,
     get_latest_features_for_entities,
+    get_training_dataset,
 )
 from feature_store.registry import load_feature_config
 
 log = structlog.get_logger()
 
-MLFLOW_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5001")
 EXPERIMENT_NAME = "churn-prediction-feature-store"
-MODEL_NAME = "churn-predictor"
+MODEL_NAME = "churn_predictor_v1"
 FEATURE_VERSION = "v1"
 RANDOM_STATE = 42
+
+
+def _init_mlflow() -> None:
+    """Point MLflow at DagsHub's hosted tracking server if configured,
+    otherwise fall back to a local ./mlruns directory so training works
+    with zero cloud accounts. Auth (MLFLOW_TRACKING_USERNAME/PASSWORD) is
+    read by MLflow from env automatically.
+    """
+    uri = os.getenv("MLFLOW_TRACKING_URI", "").strip()
+    mlflow.set_tracking_uri(uri or "file:./mlruns")
+    mlflow.set_experiment(EXPERIMENT_NAME)
 
 
 # ---------------------------------------------------------------------------
@@ -82,15 +93,15 @@ def generate_labels(client, n_users: int = 10_000) -> pd.DataFrame:
         """
         SELECT
             u.user_id,
-            countIf(t.event_time >= %(before_start)s AND t.event_time < %(label_date)s
+            count(*) FILTER (WHERE t.event_time >= $before_start AND t.event_time < $label_date
                     AND t.status = 'success')                            AS txns_before,
-            countIf(t.event_time >= %(label_date)s AND t.event_time < %(after_end)s
+            count(*) FILTER (WHERE t.event_time >= $label_date AND t.event_time < $after_end
                     AND t.status = 'success')                            AS txns_after
         FROM raw_users u
         LEFT JOIN raw_transactions t ON t.user_id = u.user_id
         GROUP BY u.user_id
         HAVING txns_before > 0
-        LIMIT %(n)s
+        LIMIT $n
         """,
         {
             "before_start": label_date - timedelta(days=30),
@@ -180,47 +191,18 @@ def build_pit_training_dataset(labels_df: pd.DataFrame) -> pd.DataFrame:
     Build a training dataset using point-in-time correct feature retrieval.
     Each row's features are looked up at exactly the label_timestamp,
     preventing any data from after the label date from entering training.
-    """
-    client = get_clickhouse_client()
 
+    Reuses the shared ASOF join in offline_store.get_training_dataset instead
+    of re-implementing PIT SQL here.
+    """
     label_pairs = list(
         zip(labels_df["entity_id"].tolist(), labels_df["label_timestamp"].tolist())
     )
 
     log.info("building_pit_dataset", entities=len(label_pairs))
 
-    # Use ClickHouse LATERAL join for PIT-correct feature retrieval
-    # For each entity, get the latest feature row where event_time <= label_timestamp
-    entity_ids = [eid for eid, _ in label_pairs]
-    label_ts = label_pairs[0][1]  # All labels at the same timestamp in this demo
+    feature_df = get_training_dataset(label_pairs, FEATURE_VERSION)
 
-    rows = client.execute(
-        f"""
-        SELECT
-            fh.entity_id,
-            {", ".join(f"fh.{col}" for col in FEATURE_COLS)}
-        FROM
-        (
-            SELECT DISTINCT entity_id
-            FROM feature_history
-            WHERE entity_id IN %(ids)s
-              AND feature_version = %(version)s
-        ) AS entities
-        LEFT JOIN LATERAL
-        (
-            SELECT entity_id, {", ".join(FEATURE_COLS)}
-            FROM feature_history
-            WHERE entity_id = entities.entity_id
-              AND feature_version = %(version)s
-              AND event_time <= %(label_ts)s
-            ORDER BY event_time DESC
-            LIMIT 1
-        ) AS fh ON 1=1
-        """,
-        {"ids": entity_ids, "version": FEATURE_VERSION, "label_ts": label_ts},
-    )
-
-    feature_df = pd.DataFrame(rows, columns=["entity_id"] + FEATURE_COLS)
     dataset = feature_df.merge(
         labels_df[["entity_id", "churned"]], on="entity_id", how="inner"
     ).fillna(0)
@@ -243,8 +225,7 @@ def train_and_register(dataset: pd.DataFrame) -> str:
     Train LightGBM on PIT-correct features, track with MLflow,
     register in Model Registry, return run_id.
     """
-    mlflow.set_tracking_uri(MLFLOW_URI)
-    mlflow.set_experiment(EXPERIMENT_NAME)
+    _init_mlflow()
 
     X = dataset[FEATURE_COLS].fillna(0)
     y = dataset["churned"]
@@ -322,10 +303,10 @@ def train_and_register(dataset: pd.DataFrame) -> str:
 def snapshot_training_distribution(feature_version: str = FEATURE_VERSION) -> None:
     """
     Capture statistical distribution of training features and write to
-    ClickHouse skew_snapshots. This becomes the baseline for comparing
+    DuckDB skew_snapshots. This becomes the baseline for comparing
     against serving-time distributions in the skew detection module.
     """
-    client = get_clickhouse_client()
+    client = get_duckdb_client()
     stats = get_feature_stats(feature_version=feature_version, since_days=7)
     snapshot_id = str(uuid.uuid4())[:12]
     now = datetime.utcnow()
@@ -333,33 +314,37 @@ def snapshot_training_distribution(feature_version: str = FEATURE_VERSION) -> No
     rows = []
     for feature_name, s in stats.items():
         rows.append(
-            (
-                snapshot_id,
-                feature_name,
-                feature_version,
-                "training",
-                s["mean"],
-                s["std"],
-                s["p25"],
-                s["p50"],
-                s["p75"],
-                s["p95"],
-                s["null_rate"],
-                s["sample_count"],
-                now,
-            )
+            {
+                "snapshot_id": snapshot_id,
+                "feature_name": feature_name,
+                "feature_version": feature_version,
+                "context": "training",
+                "mean": s["mean"],
+                "std": s["std"],
+                "p25": s["p25"],
+                "p50": s["p50"],
+                "p75": s["p75"],
+                "p95": s["p95"],
+                "null_rate": s["null_rate"],
+                "sample_count": s["sample_count"],
+                "captured_at": now,
+            }
         )
 
-    if rows:
+    for row in rows:
         client.execute(
             """
             INSERT INTO skew_snapshots
             (snapshot_id, feature_name, feature_version, context,
              mean, std, p25, p50, p75, p95, null_rate, sample_count, captured_at)
             VALUES
+            ($snapshot_id, $feature_name, $feature_version, $context,
+             $mean, $std, $p25, $p50, $p75, $p95, $null_rate, $sample_count, $captured_at)
             """,
-            rows,
+            row,
         )
+
+    if rows:
         log.info(
             "training_distribution_snapshot_saved",
             features=len(rows),
@@ -378,7 +363,7 @@ def main() -> None:
     parser.add_argument("--feature-version", default="v1")
     args = parser.parse_args()
 
-    client = get_clickhouse_client()
+    client = get_duckdb_client()
 
     # 1. Generate labels
     labels_df = generate_labels(client)
