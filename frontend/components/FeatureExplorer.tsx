@@ -4,7 +4,6 @@ import { api, Feature } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { DataState } from "./DataState";
 import LineageGraph from "./LineageGraph";
-import shared from "./shared.module.css";
 
 export default function FeatureExplorer() {
   const { data: rows, loading, error, run } = useApi<Feature[]>();
@@ -14,18 +13,26 @@ export default function FeatureExplorer() {
   }, [run]);
 
   return (
-    <div className={shared.panel}>
-      <div className={shared.panelHeader}>
-        <h2 className={shared.panelTitle}>Feature Registry</h2>
-        <p className={shared.panelSubtitle}>
-          Every feature currently defined in <code className="mono">feature_store/features.py</code>
-          {" "}— the single SQL module reused by offline compute, on-demand serving, and PIT training joins.
-        </p>
+    <div className="stack">
+      <div className="stack-head">
+        <div className="stack-head-text">
+          <h2 className="stack-title">Feature Registry</h2>
+          <p className="stack-sub">
+            Every feature currently defined in <code className="mono">feature_store/features.py</code>.
+          </p>
+        </div>
+        <span className="chip">registry · v1</span>
       </div>
 
-      <div className={shared.card}>
-        <div className={shared.cardHeader}>
-          <span className={shared.cardHeaderTitle}>Registered features</span>
+      <p className="callout">
+        <strong>One SQL module, every path.</strong> Offline backfill, on-demand serving, and
+        point-in-time training joins all call the same feature definitions, so serving can never
+        drift from training.
+      </p>
+
+      <div className="card">
+        <div className="card-head">
+          <span className="section-label">Registered features</span>
         </div>
         <DataState
           loading={loading}
@@ -34,8 +41,8 @@ export default function FeatureExplorer() {
           emptyMessage="No features registered yet — run the registry sync."
           onRetry={() => run(api.registry())}
         >
-          <div className={shared.tableWrap}>
-            <table className={shared.table}>
+          <div className="table-wrap">
+            <table className="data-table">
               <thead>
                 <tr>
                   <th>Feature</th>
@@ -50,12 +57,12 @@ export default function FeatureExplorer() {
                 {rows?.map((f) => (
                   <tr key={f.feature_name}>
                     <td className="mono">{f.feature_name}</td>
-                    <td className={shared.numeric}>{f.dtype}</td>
+                    <td className="num">{f.dtype}</td>
                     <td className="mono">{f.source_table}</td>
                     <td>{f.owner}</td>
                     <td>
                       {f.tags.map((t) => (
-                        <span key={t} className={shared.tag}>
+                        <span key={t} className="tag">
                           {t}
                         </span>
                       ))}
@@ -69,9 +76,9 @@ export default function FeatureExplorer() {
         </DataState>
       </div>
 
-      <div className={shared.card}>
-        <div className={shared.cardHeader}>
-          <span className={shared.cardHeaderTitle}>Lineage graph</span>
+      <div className="card">
+        <div className="card-head">
+          <span className="section-label">Lineage graph</span>
         </div>
         <LineageGraph />
       </div>

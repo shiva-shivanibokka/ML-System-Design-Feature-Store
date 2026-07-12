@@ -3,7 +3,6 @@ import { useEffect, useMemo } from "react";
 import { api, LineageGraph as LineageGraphData, LineageNode } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { DataState } from "./DataState";
-import styles from "./LineageGraph.module.css";
 
 const TYPE_ORDER: LineageNode["type"][] = ["raw_table", "feature", "model"];
 const COLUMN_X = { raw_table: 90, feature: 420, model: 750 };
@@ -54,14 +53,14 @@ export default function LineageGraph() {
       onRetry={() => run(api.lineage())}
     >
       {positioned && (
-        <div className={styles.wrap}>
-          <div className={styles.legend}>
-            <LegendItem swatch={styles.swatchRaw} label="raw table" />
-            <LegendItem swatch={styles.swatchFeature} label="feature" />
-            <LegendItem swatch={styles.swatchModel} label="model" />
+        <div className="lineage-wrap">
+          <div className="lineage-legend">
+            <LegendItem swatch="lineage-swatch-raw" label="raw table" />
+            <LegendItem swatch="lineage-swatch-feature" label="feature" />
+            <LegendItem swatch="lineage-swatch-model" label="model" />
           </div>
           <svg
-            className={styles.svg}
+            className="lineage-svg"
             viewBox={`0 0 ${WIDTH} ${positioned.height}`}
             role="img"
             aria-label="Lineage graph from raw tables through features to models"
@@ -110,13 +109,13 @@ export default function LineageGraph() {
                   rx={4}
                   className={
                     n.type === "raw_table"
-                      ? styles.nodeRaw
+                      ? "lineage-node-raw"
                       : n.type === "feature"
-                        ? styles.nodeFeature
-                        : styles.nodeModel
+                        ? "lineage-node-feature"
+                        : "lineage-node-model"
                   }
                 />
-                <text x={39} y={19} textAnchor="middle" className={styles.nodeLabel}>
+                <text x={39} y={19} textAnchor="middle" className="lineage-node-label">
                   {truncate(n.id, 12)}
                 </text>
                 <title>{n.id}</title>
@@ -131,8 +130,8 @@ export default function LineageGraph() {
 
 function LegendItem({ swatch, label }: { swatch: string; label: string }) {
   return (
-    <span className={styles.legendItem}>
-      <span className={`${styles.legendSwatch} ${swatch}`} />
+    <span className="lineage-legend-item">
+      <span className={`lineage-legend-swatch ${swatch}`} />
       {label}
     </span>
   );

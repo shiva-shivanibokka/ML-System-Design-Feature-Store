@@ -1,18 +1,8 @@
 "use client";
 import { useEffect } from "react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import { api, MatRun, Metrics, Percentiles } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { DataState } from "./DataState";
-import shared from "./shared.module.css";
 
 export default function MaterializationLog() {
   const runsApi = useApi<MatRun[]>();
@@ -29,20 +19,24 @@ export default function MaterializationLog() {
   const chartData = [...runs]
     .reverse()
     .map((r) => ({ run: shortRunId(r.run_id), entities: r.entities_processed }));
+  const maxEntities = Math.max(1, ...chartData.map((d) => d.entities));
 
   return (
-    <div className={shared.panel}>
-      <div className={shared.panelHeader}>
-        <h2 className={shared.panelTitle}>Materialization &amp; Serving Health</h2>
-        <p className={shared.panelSubtitle}>
-          Batch materialization runs that push offline features into the online store, and live
-          latency percentiles for every serving path.
-        </p>
+    <div className="stack">
+      <div className="stack-head">
+        <div className="stack-head-text">
+          <h2 className="stack-title">Materialization &amp; Serving Health</h2>
+          <p className="stack-sub">
+            Batch materialization runs that push offline features into the online store, and live
+            latency percentiles for every serving path.
+          </p>
+        </div>
+        <span className="chip">runs · latency</span>
       </div>
 
-      <div className={shared.card}>
-        <div className={shared.cardHeader}>
-          <span className={shared.cardHeaderTitle}>Entities processed per run</span>
+      <div className="card">
+        <div className="card-head">
+          <span className="section-label">Entities processed per run</span>
         </div>
         <DataState
           loading={runsApi.loading}
@@ -51,42 +45,30 @@ export default function MaterializationLog() {
           emptyMessage="No materialization runs recorded yet."
           onRetry={() => runsApi.run(api.materializationLog())}
         >
-          <div style={{ padding: "18px 12px 8px" }}>
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={chartData} margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
-                <CartesianGrid stroke="var(--border)" vertical={false} />
-                <XAxis
-                  dataKey="run"
-                  tick={{ fill: "var(--text-dim)", fontSize: 11, fontFamily: "var(--font-mono)" }}
-                  axisLine={{ stroke: "var(--border)" }}
-                  tickLine={false}
-                />
-                <YAxis
-                  tick={{ fill: "var(--text-dim)", fontSize: 11, fontFamily: "var(--font-mono)" }}
-                  axisLine={{ stroke: "var(--border)" }}
-                  tickLine={false}
-                />
-                <Tooltip
-                  cursor={{ fill: "rgba(255,255,255,0.03)" }}
-                  contentStyle={{
-                    background: "var(--surface-raised)",
-                    border: "1px solid var(--border-strong)",
-                    borderRadius: 5,
-                    fontSize: 12.5,
-                    fontFamily: "var(--font-mono)",
-                  }}
-                  labelStyle={{ color: "var(--text)" }}
-                />
-                <Bar dataKey="entities" fill="var(--cyan)" radius={[3, 3, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+          <div style={{ padding: "18px" }}>
+            <div className="bars">
+              {chartData.map((d, i) => (
+                <div className="bar-row" key={`${d.run}-${i}`}>
+                  <span className="bar-name mono" title={d.run}>
+                    {d.run}
+                  </span>
+                  <span className="bar-track">
+                    <span
+                      className="bar-fill cyan"
+                      style={{ width: `${(d.entities / maxEntities) * 100}%` }}
+                    />
+                  </span>
+                  <span className="bar-val">{d.entities.toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </DataState>
       </div>
 
-      <div className={shared.card}>
-        <div className={shared.cardHeader}>
-          <span className={shared.cardHeaderTitle}>Run history</span>
+      <div className="card">
+        <div className="card-head">
+          <span className="section-label">Run history</span>
         </div>
         <DataState
           loading={runsApi.loading}
@@ -95,8 +77,8 @@ export default function MaterializationLog() {
           emptyMessage="No materialization runs recorded yet."
           onRetry={() => runsApi.run(api.materializationLog())}
         >
-          <div className={shared.tableWrap}>
-            <table className={shared.table}>
+          <div className="table-wrap">
+            <table className="data-table">
               <thead>
                 <tr>
                   <th>Run ID</th>
@@ -112,14 +94,14 @@ export default function MaterializationLog() {
                   <tr key={r.run_id}>
                     <td className="mono">{r.run_id}</td>
                     <td>
-                      <span className={r.status === "success" ? shared.badgeOk : shared.badgeFlagged}>
+                      <span className={r.status === "success" ? "badge badge-ok" : "badge badge-flagged"}>
                         {r.status}
                       </span>
                     </td>
-                    <td className={shared.numeric}>{r.entities_processed.toLocaleString()}</td>
-                    <td className={shared.numeric}>{r.entities_failed.toLocaleString()}</td>
-                    <td className={shared.numeric}>{r.duration_ms.toLocaleString()} ms</td>
-                    <td className={shared.numeric}>{formatTime(r.completed_at)}</td>
+                    <td className="num">{r.entities_processed.toLocaleString()}</td>
+                    <td className="num">{r.entities_failed.toLocaleString()}</td>
+                    <td className="num">{r.duration_ms.toLocaleString()} ms</td>
+                    <td className="num">{formatTime(r.completed_at)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -128,9 +110,9 @@ export default function MaterializationLog() {
         </DataState>
       </div>
 
-      <div className={shared.card}>
-        <div className={shared.cardHeader}>
-          <span className={shared.cardHeaderTitle}>Serving latency</span>
+      <div className="card">
+        <div className="card-head">
+          <span className="section-label">Serving latency</span>
         </div>
         <DataState
           loading={metricsApi.loading}
@@ -142,18 +124,19 @@ export default function MaterializationLog() {
           {metricsApi.data && (
             <>
               <div style={{ padding: "16px 18px 0" }}>
-                <div className={shared.summaryStrip}>
-                  <span>
-                    <strong>{(metricsApi.data.cache_hit_rate * 100).toFixed(1)}%</strong> cache hit rate
-                  </span>
-                  <span>
-                    <strong>{metricsApi.data.online_store_entities.toLocaleString()}</strong> entities
-                    online
-                  </span>
+                <div className="tiles">
+                  <div className="tile">
+                    <div className="tile-v">{(metricsApi.data.cache_hit_rate * 100).toFixed(1)}%</div>
+                    <div className="tile-k">Cache hit rate</div>
+                  </div>
+                  <div className="tile">
+                    <div className="tile-v">{metricsApi.data.online_store_entities.toLocaleString()}</div>
+                    <div className="tile-k">Entities online</div>
+                  </div>
                 </div>
               </div>
-              <div className={shared.tableWrap}>
-                <table className={shared.table}>
+              <div className="table-wrap">
+                <table className="data-table">
                   <thead>
                     <tr>
                       <th>Path</th>
@@ -182,10 +165,10 @@ function LatencyRow({ label, p }: { label: string; p: Percentiles }) {
   return (
     <tr>
       <td>{label}</td>
-      <td className={shared.numeric}>{p.p50.toFixed(1)} ms</td>
-      <td className={shared.numeric}>{p.p95.toFixed(1)} ms</td>
-      <td className={shared.numeric}>{p.p99.toFixed(1)} ms</td>
-      <td className={shared.numeric}>{p.count.toLocaleString()}</td>
+      <td className="num">{p.p50.toFixed(1)} ms</td>
+      <td className="num">{p.p95.toFixed(1)} ms</td>
+      <td className="num">{p.p99.toFixed(1)} ms</td>
+      <td className="num">{p.count.toLocaleString()}</td>
     </tr>
   );
 }

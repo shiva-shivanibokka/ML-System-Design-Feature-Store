@@ -1,11 +1,10 @@
 "use client";
-import styles from "./shared.module.css";
 
 /**
  * Shared loading / error / empty presentation for every panel. The error
- * copy assumes the likeliest real-world cause: the HF Spaces backend is
- * free-tier and sleeps when idle, so the first request can take up to a
- * minute to wake it — this is a routine state for this app, not a crash.
+ * copy assumes the likeliest real-world cause: the Cloud Run backend
+ * scales to zero when idle, so the first request can take up to a
+ * minute to cold-start — this is a routine state for this app, not a crash.
  */
 export function DataState({
   loading,
@@ -24,23 +23,23 @@ export function DataState({
 }) {
   if (loading) {
     return (
-      <div className={styles.state}>
-        <span className={styles.spinner} aria-hidden="true" />
+      <div className="state">
+        <span className="spinner" aria-hidden="true" />
         <span>Fetching from the feature server…</span>
       </div>
     );
   }
   if (error) {
     return (
-      <div className={styles.stateError} role="alert">
+      <div className="state-error" role="alert">
         <p>
           <strong>Couldn&rsquo;t reach the feature server.</strong> It may be
-          asleep — Hugging Face Spaces free tier sleeps after idle time and
-          can take up to a minute to wake on the next request.
+          cold-starting — the Cloud Run backend scales to zero when idle
+          and can take up to a minute to wake on the next request.
         </p>
-        <p className={styles.stateErrorDetail}>{error}</p>
+        <p className="state-error-detail">{error}</p>
         {onRetry && (
-          <button type="button" className={styles.retryButton} onClick={onRetry}>
+          <button type="button" className="retry-btn" onClick={onRetry}>
             Retry
           </button>
         )}
@@ -48,7 +47,7 @@ export function DataState({
     );
   }
   if (empty) {
-    return <div className={styles.state}>{emptyMessage}</div>;
+    return <div className="state">{emptyMessage}</div>;
   }
   return <>{children}</>;
 }

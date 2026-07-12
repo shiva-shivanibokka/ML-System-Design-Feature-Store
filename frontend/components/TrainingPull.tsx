@@ -3,8 +3,6 @@ import { FormEvent, useState } from "react";
 import { api, BatchResult } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { DataState } from "./DataState";
-import shared from "./shared.module.css";
-import styles from "./TrainingPull.module.css";
 
 export default function TrainingPull() {
   const [input, setInput] = useState("1, 2, 3, 4, 5");
@@ -21,41 +19,43 @@ export default function TrainingPull() {
   const featureCols = data ? uniqueFeatureCols(data.results) : [];
 
   return (
-    <div className={shared.panel}>
-      <div className={shared.panelHeader}>
-        <h2 className={shared.panelTitle}>Training Pull</h2>
-        <p className={shared.panelSubtitle}>
-          Fetch current features for a batch of entities the way a training job would — served from the
-          online store when materialized, computed on demand otherwise, through{" "}
-          <code className="mono">POST /features/batch</code>.
-        </p>
+    <div className="stack">
+      <div className="stack-head">
+        <div className="stack-head-text">
+          <h2 className="stack-title">Training Pull</h2>
+          <p className="stack-sub">
+            Fetch current features for a batch of entities the way a training job would — served from
+            the online store when materialized, computed on demand otherwise.
+          </p>
+        </div>
+        <span className="chip mono">POST /features/batch</span>
       </div>
 
-      <form className={styles.form} onSubmit={submit}>
-        <label className={styles.label} htmlFor="entity-ids">
+      <form className="field-form" onSubmit={submit}>
+        <label className="field-label" htmlFor="entity-ids">
           Entity IDs (comma-separated)
         </label>
-        <div className={styles.row}>
+        <div className="field-row">
           <input
             id="entity-ids"
-            className={styles.input}
+            className="text-input"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="1, 2, 3"
             spellCheck={false}
           />
-          <button type="submit" className={styles.submit} disabled={ids.length === 0 || loading}>
+          <button type="submit" className="btn-primary" disabled={ids.length === 0 || loading}>
             {loading ? "Pulling…" : "Pull features"}
           </button>
         </div>
         {ids.length === 0 && input.trim() !== "" && (
-          <p className={styles.hint}>Enter numeric entity IDs separated by commas.</p>
+          <p className="field-hint">Enter numeric entity IDs separated by commas.</p>
         )}
       </form>
 
-      <div className={shared.card}>
-        <div className={shared.cardHeader}>
-          <span className={shared.cardHeaderTitle}>Results</span>
+      <div className="card">
+        <div className="card-head">
+          <span className="section-label">Results</span>
         </div>
         <DataState
           loading={loading}
@@ -66,24 +66,28 @@ export default function TrainingPull() {
         >
           {data && (
             <>
-              <div className={styles.summaryWrap}>
-                <div className={shared.summaryStrip}>
-                  <span>
-                    <strong>{data.hits}</strong> online-store hits
-                  </span>
-                  <span>
-                    <strong>{data.on_demand_computed}</strong> computed on demand
-                  </span>
-                  <span>
-                    <strong>{data.misses}</strong> misses
-                  </span>
-                  <span>
-                    <strong>{data.latency_ms.toFixed(1)} ms</strong> total latency
-                  </span>
+              <div style={{ padding: "16px 18px 0" }}>
+                <div className="tiles">
+                  <div className="tile">
+                    <div className="tile-v">{data.hits}</div>
+                    <div className="tile-k">Online hits</div>
+                  </div>
+                  <div className="tile">
+                    <div className="tile-v">{data.on_demand_computed}</div>
+                    <div className="tile-k">Computed on demand</div>
+                  </div>
+                  <div className="tile">
+                    <div className="tile-v">{data.misses}</div>
+                    <div className="tile-k">Misses</div>
+                  </div>
+                  <div className="tile">
+                    <div className="tile-v">{data.latency_ms.toFixed(1)}</div>
+                    <div className="tile-k">Latency (ms)</div>
+                  </div>
                 </div>
               </div>
-              <div className={shared.tableWrap}>
-                <table className={shared.table}>
+              <div className="table-wrap">
+                <table className="data-table">
                   <thead>
                     <tr>
                       <th>Entity</th>
@@ -98,12 +102,12 @@ export default function TrainingPull() {
                         <td className="mono">{entityId}</td>
                         {features ? (
                           featureCols.map((c) => (
-                            <td key={c} className={shared.numeric}>
+                            <td key={c} className="num">
                               {features[c] !== undefined ? formatNum(features[c]) : "—"}
                             </td>
                           ))
                         ) : (
-                          <td colSpan={featureCols.length} className={styles.missRow}>
+                          <td colSpan={featureCols.length} className="miss-cell">
                             no features available
                           </td>
                         )}

@@ -5,7 +5,6 @@ import FeatureExplorer from "@/components/FeatureExplorer";
 import TrainingPull from "@/components/TrainingPull";
 import SkewReport from "@/components/SkewReport";
 import MaterializationLog from "@/components/MaterializationLog";
-import styles from "./page.module.css";
 
 const TABS = [
   { id: "explorer", number: "01", label: "Explorer", Component: FeatureExplorer },
@@ -20,49 +19,41 @@ export default function Home() {
   const Active = active.Component;
 
   return (
-    <div className={styles.shell}>
-      <header className={styles.header}>
-        <div className={styles.headerTop}>
-          <div className={styles.brand}>
-            <span className={styles.brandMark} aria-hidden="true">
-              ◆
-            </span>
-            <span className={styles.brandName}>FEATURESTORE</span>
-          </div>
+    <main className="wrap">
+      <header className="hero">
+        <h1>Feature Store</h1>
+        <p>
+          A point-in-time correct feature platform: <strong>MotherDuck (DuckDB)</strong> computes and
+          backfills every feature offline, <strong>Aiven Valkey</strong> serves it online in
+          milliseconds, and one SQL module — <span className="mono">feature_store/features.py</span> —
+          defines each feature exactly once, so training and serving can never drift apart.
+        </p>
+        <div className="live-row">
           <StatusPill />
         </div>
-        <p className={styles.tagline}>
-          An end-to-end ML feature platform — a <strong>DuckDB / MotherDuck</strong> offline store, an{" "}
-          <strong>Upstash Redis</strong> online store, point-in-time correct training joins via{" "}
-          <span className="mono">ASOF JOIN</span>, and continuous training/serving skew detection. One
-          feature definition, reused everywhere it&rsquo;s needed.
-        </p>
       </header>
 
-      <nav className={styles.tabs} aria-label="Dashboard sections">
+      <nav className="tabs" role="tablist" aria-label="Dashboard sections">
         {TABS.map((t) => (
           <button
             key={t.id}
             type="button"
-            className={`${styles.tab} ${t.id === activeId ? styles.tabActive : ""}`}
+            role="tab"
+            className="tab"
+            aria-selected={t.id === activeId}
             onClick={() => setActiveId(t.id)}
-            aria-current={t.id === activeId ? "page" : undefined}
           >
-            <span className={styles.tabNumber}>{t.number}</span>
+            <span className="tab-num">{t.number}</span>
             {t.label}
           </button>
         ))}
       </nav>
 
-      <main className={styles.main}>
+      <section className="stage" role="tabpanel">
         <Active />
-      </main>
+      </section>
 
-      <footer className={styles.footer}>
-        <span className="mono">feature_store/features.py</span> — one SQL module computes every
-        feature; offline backfill, on-demand serving, and PIT training joins all call it, so serving
-        can never drift from training.
-      </footer>
-    </div>
+      <p className="footer">Built by Shivani Bokka</p>
+    </main>
   );
 }

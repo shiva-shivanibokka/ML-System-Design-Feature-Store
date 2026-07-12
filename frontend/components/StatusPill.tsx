@@ -1,14 +1,13 @@
 "use client";
 import { useEffect, useState } from "react";
-import styles from "./StatusPill.module.css";
 
 type Status = "checking" | "ok" | "down";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:7860";
 
-/** Pings /health once on mount. HF Spaces free tier sleeps when idle, so
- * "down" here just as often means "asleep" as it means broken — the label
- * reflects that rather than reading as an outage. */
+/** Pings /health once on mount. Cloud Run scales to zero when idle, so
+ * "down" here just as often means "cold-starting" as it means broken —
+ * the label reflects that rather than reading as an outage. */
 export default function StatusPill() {
   const [status, setStatus] = useState<Status>("checking");
 
@@ -27,11 +26,15 @@ export default function StatusPill() {
   }, []);
 
   const label =
-    status === "ok" ? "API online" : status === "down" ? "API asleep / unreachable" : "Checking API…";
+    status === "ok"
+      ? "live · MotherDuck + Valkey · Cloud Run"
+      : status === "down"
+        ? "waking up · Cloud Run cold start"
+        : "checking · Cloud Run";
 
   return (
-    <span className={`${styles.pill} ${styles[status]}`}>
-      <span className={styles.dot} aria-hidden="true" />
+    <span className={`pill ${status}`}>
+      <span className="dot" aria-hidden="true" />
       {label}
     </span>
   );
