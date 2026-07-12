@@ -2,8 +2,8 @@
 feature_store/connections.py
 ============================
 Connection factories for the offline store (DuckDB / MotherDuck) and the
-online store (Redis / Upstash). Both are env-configured with local fallbacks
-so the project runs with zero cloud accounts for local development.
+online store (Redis / Aiven Valkey). Both are env-configured with local
+fallbacks so the project runs with zero cloud accounts for local development.
 
 Offline store:
   - If MOTHERDUCK_TOKEN is set, connect to MotherDuck (`md:<db>`).
@@ -14,8 +14,8 @@ connection behind a lock (register() must bind DataFrames to that exact
 connection object, which rules out a fresh cursor per call).
 
 Online store:
-  - redis.from_url(REDIS_URL). Upstash provides an rediss:// URL; local dev
-    defaults to redis://localhost:6379.
+  - redis.from_url(REDIS_URL). Aiven Valkey (or any Redis-compatible service)
+    provides an rediss:// URL; local dev defaults to redis://localhost:6379.
 """
 
 from __future__ import annotations

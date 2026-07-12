@@ -23,4 +23,6 @@ jobs:
   keep-warm:
     runs-on: ubuntu-latest
     steps:
-      - run: curl -fsS "${{ secrets.HF_SPACE_URL }}/health" || true
+      # Ping the Cloud Run service /health so a scale-to-zero instance is warm.
+      # --retry rides out a cold start; a persistent failure surfaces (no `|| true`).
+      - run: curl -fsS --retry 5 --retry-all-errors --retry-delay 10 "${{ secrets.CLOUD_RUN_URL }}/health"
