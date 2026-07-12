@@ -2,20 +2,17 @@
 materialization/materialize.py
 ===============================
 Online store materialization — syncs the latest feature snapshot from
-ClickHouse (offline store) to Redis (online store).
+DuckDB/MotherDuck (offline store) to Redis (online store).
 
 This is the bridge between the offline and online stores. After backfill
 or each new compute_features() call, this script pushes the most recent
 feature values to Redis so the serving path can return them in <2ms.
 
-Run modes:
-  1. One-shot:   python materialization/materialize.py --once
-  2. Scheduled:  python materialization/materialize.py --schedule
-     (runs every 6 hours using APScheduler — no Airflow needed)
+One-shot only — scheduled runs happen via GitHub Actions cron, not an
+in-process scheduler.
 
 Usage:
-    python materialization/materialize.py --once
-    python materialization/materialize.py --schedule --interval-hours 6
+    python materialization/materialize.py
 """
 
 import argparse
@@ -28,9 +25,11 @@ import structlog
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from feature_store.connections import get_clickhouse_client, get_redis_client
-from feature_store.offline_store import FEATURE_COLS, get_latest_features_for_entities
+from feature_store.connections import get_duckdb_client
+from feature_store.features import FEATURE_COLS
+from feature_store.offline_store import get_latest_features_for_entities
 from feature_store.online_store import write_entities_pipeline
+from feature_store.schema import apply_schema
 from feature_store.validator import validate_feature_batch
 
 log = structlog.get_logger()
@@ -45,12 +44,13 @@ def _get_all_entity_ids(client) -> list[int]:
 
 def run_materialization(feature_version: str = "v1") -> dict:
     """
-    Pull latest features for all entities from ClickHouse offline store,
+    Pull latest features for all entities from the DuckDB offline store,
     validate with Pandera, and write to Redis online store.
 
     Returns a summary dict for logging and audit trail.
     """
-    client = get_clickhouse_client()
+    client = get_duckdb_client()
+    apply_schema(client)
     run_id = str(uuid.uuid4())[:12]
     started_at = datetime.utcnow()
 
@@ -110,7 +110,7 @@ def run_materialization(feature_version: str = "v1") -> dict:
     duration_ms = int((datetime.utcnow() - started_at).total_seconds() * 1000)
     status = "success" if failed == 0 else ("partial" if processed > 0 else "failed")
 
-    # ── 3. Write audit log to ClickHouse ─────────────────────────────────────
+    # ── 3. Write audit log to the offline store ──────────────────────────────
     client.execute(
         """
         INSERT INTO materialization_log
@@ -118,21 +118,19 @@ def run_materialization(feature_version: str = "v1") -> dict:
          entities_failed, duration_ms, status, error_message,
          started_at, completed_at)
         VALUES
+        ($run_id, $v, 'user', $proc, $failed, $dur, $status, $err, $started, $completed)
         """,
-        [
-            (
-                run_id,
-                feature_version,
-                "user",
-                processed,
-                failed + validation_failures,
-                duration_ms,
-                status,
-                None,
-                started_at,
-                datetime.utcnow(),
-            )
-        ],
+        {
+            "run_id": run_id,
+            "v": feature_version,
+            "proc": processed,
+            "failed": failed + validation_failures,
+            "dur": duration_ms,
+            "status": status,
+            "err": None,
+            "started": started_at,
+            "completed": datetime.utcnow(),
+        },
     )
 
     summary = {
@@ -148,43 +146,12 @@ def run_materialization(feature_version: str = "v1") -> dict:
     return summary
 
 
-def run_scheduled(interval_hours: int = 6, feature_version: str = "v1") -> None:
-    """
-    Run materialization on a fixed schedule using APScheduler.
-    No external scheduler (Airflow, cron) required — embedded in the process.
-    """
-    from apscheduler.schedulers.blocking import BlockingScheduler
-    from apscheduler.triggers.interval import IntervalTrigger
-
-    scheduler = BlockingScheduler()
-    scheduler.add_job(
-        func=lambda: run_materialization(feature_version=feature_version),
-        trigger=IntervalTrigger(hours=interval_hours),
-        id="materialize",
-        name="Online store materialization",
-        replace_existing=True,
-    )
-
-    log.info("scheduler_starting", interval_hours=interval_hours)
-    # Run immediately on startup, then on schedule
-    run_materialization(feature_version=feature_version)
-    scheduler.start()
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="Materialize features to online store")
-    parser.add_argument("--once", action="store_true", default=False)
-    parser.add_argument("--schedule", action="store_true", default=False)
-    parser.add_argument("--interval-hours", type=int, default=6)
     parser.add_argument("--feature-version", default="v1")
     args = parser.parse_args()
 
-    if args.schedule:
-        run_scheduled(
-            interval_hours=args.interval_hours, feature_version=args.feature_version
-        )
-    else:
-        run_materialization(feature_version=args.feature_version)
+    run_materialization(feature_version=args.feature_version)
 
 
 if __name__ == "__main__":

@@ -25,8 +25,9 @@ import structlog
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from feature_store.connections import get_clickhouse_client
+from feature_store.connections import get_duckdb_client
 from feature_store.offline_store import compute_features
+from feature_store.schema import apply_schema
 
 log = structlog.get_logger()
 
@@ -42,10 +43,11 @@ def run_backfill(
 
     For a 90-day backfill at 24-hour intervals:
         - 90 snapshots total
-        - Each snapshot runs one ClickHouse INSERT ... SELECT (bulk operation)
+        - Each snapshot runs one DuckDB INSERT ... SELECT (bulk operation)
         - Total runtime: ~3-5 minutes on 10K users
     """
-    client = get_clickhouse_client()
+    client = get_duckdb_client()
+    apply_schema(client)
     now = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
 
     # Build list of snapshot timestamps (most recent first)
@@ -75,7 +77,7 @@ def run_backfill(
         """
         SELECT DISTINCT event_time
         FROM feature_history
-        WHERE feature_version = %(version)s
+        WHERE feature_version = $version
         """,
         {"version": feature_version},
     )
@@ -99,6 +101,7 @@ def run_backfill(
 
         try:
             n_rows = compute_features(
+                client,
                 snapshot_time=snapshot_time,
                 feature_version=feature_version,
             )
@@ -113,21 +116,19 @@ def run_backfill(
                  entities_failed, duration_ms, status, error_message,
                  started_at, completed_at)
                 VALUES
+                ($run_id, $v, 'user', $proc, $failed, $dur, $status, $err, $started, $completed)
                 """,
-                [
-                    (
-                        run_id,
-                        feature_version,
-                        "user",
-                        n_rows,
-                        0,
-                        duration_ms,
-                        "success",
-                        None,
-                        started_at,
-                        datetime.utcnow(),
-                    )
-                ],
+                {
+                    "run_id": run_id,
+                    "v": feature_version,
+                    "proc": n_rows,
+                    "failed": 0,
+                    "dur": duration_ms,
+                    "status": "success",
+                    "err": None,
+                    "started": started_at,
+                    "completed": datetime.utcnow(),
+                },
             )
 
             succeeded += 1
@@ -150,21 +151,19 @@ def run_backfill(
                  entities_failed, duration_ms, status, error_message,
                  started_at, completed_at)
                 VALUES
+                ($run_id, $v, 'user', $proc, $failed, $dur, $status, $err, $started, $completed)
                 """,
-                [
-                    (
-                        run_id,
-                        feature_version,
-                        "user",
-                        0,
-                        1,
-                        duration_ms,
-                        "failed",
-                        str(exc)[:500],
-                        started_at,
-                        datetime.utcnow(),
-                    )
-                ],
+                {
+                    "run_id": run_id,
+                    "v": feature_version,
+                    "proc": 0,
+                    "failed": 1,
+                    "dur": duration_ms,
+                    "status": "failed",
+                    "err": str(exc)[:500],
+                    "started": started_at,
+                    "completed": datetime.utcnow(),
+                },
             )
 
             log.error(
