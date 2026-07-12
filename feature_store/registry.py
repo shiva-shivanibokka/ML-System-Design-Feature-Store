@@ -2,11 +2,11 @@
 feature_store/registry.py
 ==========================
 Feature registry — reads feature definitions from configs/features.yaml
-and syncs them to the ClickHouse feature_registry + lineage_edges tables.
+and syncs them to the DuckDB feature_registry + lineage_edges tables.
 
 Responsibilities:
   - Load feature definitions from YAML
-  - Upsert to ClickHouse feature_registry on startup
+  - Upsert to DuckDB feature_registry on startup
   - Write lineage edges to lineage_edges table
   - Provide get_feature_names() for use by offline store and validator
 """
@@ -19,7 +19,8 @@ from typing import Any
 import structlog
 import yaml
 
-from feature_store.connections import get_clickhouse_client
+from feature_store.connections import get_duckdb_client
+from feature_store.schema import apply_schema
 
 log = structlog.get_logger()
 
@@ -39,11 +40,15 @@ def get_feature_names(config: dict | None = None) -> list[str]:
 
 def sync_registry() -> None:
     """
-    Upsert all feature definitions from features.yaml into ClickHouse.
+    Upsert all feature definitions from features.yaml into DuckDB.
     Called at application startup and can be re-run safely (idempotent).
+
+    DuckDB has no ReplacingMergeTree, so idempotency is implemented as
+    delete-then-insert of the version's rows.
     """
     config = load_feature_config()
-    client = get_clickhouse_client()
+    client = get_duckdb_client()
+    apply_schema(client)
     version = config["feature_version"]
     entity_type = config["entity_type"]
     now = datetime.utcnow()
@@ -51,62 +56,63 @@ def sync_registry() -> None:
     log.info("syncing_feature_registry", version=version, count=len(config["features"]))
 
     # ── Upsert feature definitions ──────────────────────────────────────────
-    rows = []
-    for feat in config["features"]:
-        rows.append(
-            (
-                feat["name"],
-                version,
-                entity_type,
-                feat["dtype"],
-                feat["description"],
-                feat["source_table"],
-                feat["transformation"],
-                feat["owner"],
-                feat.get("tags", []),
-                1,  # is_active
-                now,
-                None,  # deprecated_at
-            )
-        )
-
     client.execute(
-        """
-        INSERT INTO feature_registry
-        (feature_name, feature_version, entity_type, dtype, description,
-         source_table, transformation, owner, tags, is_active, created_at, deprecated_at)
-        VALUES
-        """,
-        rows,
+        "DELETE FROM feature_registry WHERE feature_version = $v", {"v": version}
     )
-    log.info("feature_registry_synced", rows=len(rows))
+    for feat in config["features"]:
+        client.execute(
+            """
+            INSERT INTO feature_registry
+            (feature_name, feature_version, entity_type, dtype, description,
+             source_table, transformation, owner, tags, is_active, created_at, deprecated_at)
+            VALUES
+            ($name, $version, $entity_type, $dtype, $description,
+             $source_table, $transformation, $owner, $tags, $is_active, $created_at, $deprecated_at)
+            """,
+            {
+                "name": feat["name"],
+                "version": version,
+                "entity_type": entity_type,
+                "dtype": feat["dtype"],
+                "description": feat["description"],
+                "source_table": feat["source_table"],
+                "transformation": feat["transformation"],
+                "owner": feat["owner"],
+                "tags": feat.get("tags", []),
+                "is_active": 1,
+                "created_at": now,
+                "deprecated_at": None,
+            },
+        )
+    log.info("feature_registry_synced", rows=len(config["features"]))
 
     # ── Upsert lineage edges ─────────────────────────────────────────────────
-    edge_rows = [
-        (
-            edge["source"],
-            edge["target"],
-            edge["edge_type"],
-            version,
-            now,
-        )
-        for edge in config.get("lineage_edges", [])
-    ]
-    if edge_rows:
+    edges = config.get("lineage_edges", [])
+    client.execute(
+        "DELETE FROM lineage_edges WHERE feature_version = $v", {"v": version}
+    )
+    for edge in edges:
         client.execute(
             """
             INSERT INTO lineage_edges
             (source_node, target_node, edge_type, feature_version, created_at)
-            VALUES
+            VALUES ($source, $target, $edge_type, $version, $created_at)
             """,
-            edge_rows,
+            {
+                "source": edge["source"],
+                "target": edge["target"],
+                "edge_type": edge["edge_type"],
+                "version": version,
+                "created_at": now,
+            },
         )
-        log.info("lineage_edges_synced", edges=len(edge_rows))
+    if edges:
+        log.info("lineage_edges_synced", edges=len(edges))
 
 
 def get_all_features(version: str | None = None) -> list[dict]:
     """Return all active features from registry, optionally filtered by version."""
-    client = get_clickhouse_client()
+    client = get_duckdb_client()
     config = load_feature_config()
     v = version or config["feature_version"]
 
@@ -117,7 +123,7 @@ def get_all_features(version: str | None = None) -> list[dict]:
             description, source_table, transformation, owner, tags,
             is_active, created_at
         FROM feature_registry
-        WHERE feature_version = %(version)s AND is_active = 1
+        WHERE feature_version = $version AND is_active = 1
         ORDER BY feature_name
         """,
         {"version": v},
