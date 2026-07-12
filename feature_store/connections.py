@@ -18,6 +18,7 @@ Online store:
 from __future__ import annotations
 
 import os
+import threading
 from functools import lru_cache
 
 import duckdb
@@ -32,22 +33,25 @@ class _DuckClient:
 
     def __init__(self, conn: duckdb.DuckDBPyConnection) -> None:
         self._conn = conn
+        # ponytail: one global lock over the single connection. register() binds
+        # a DataFrame to the exact connection object, so we cannot use a fresh
+        # .cursor() per call (the registration would be invisible). A single
+        # DuckDB connection is not safe for concurrent thread access, so serialize
+        # every execute/register. Move to a connection pool only if serving
+        # throughput ever outgrows one connection (not a concern for this demo).
+        self._lock = threading.Lock()
 
     def execute(self, sql: str, params: dict | list | None = None) -> list[tuple]:
-        # Run directly on the singleton connection (not a fresh .cursor() per
-        # call): DuckDB's register() binds a DataFrame to the specific
-        # connection/cursor object it was called on, so a new cursor per
-        # execute() can never see anything registered via .register() below.
-        # DuckDB serializes concurrent access to a single connection itself,
-        # so this is still safe under FastAPI's single-process usage.
-        self._conn.execute(sql, params if params is not None else {})
-        try:
-            return self._conn.fetchall()
-        except duckdb.InvalidInputException:
-            return []  # statements without a result set (INSERT/DDL)
+        with self._lock:
+            self._conn.execute(sql, params if params is not None else {})
+            try:
+                return self._conn.fetchall()
+            except duckdb.InvalidInputException:
+                return []  # statements without a result set (INSERT/DDL)
 
     def register(self, name: str, df) -> None:
-        self._conn.register(name, df)
+        with self._lock:
+            self._conn.register(name, df)
 
     @property
     def raw(self) -> duckdb.DuckDBPyConnection:

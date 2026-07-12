@@ -99,9 +99,13 @@ def validate_feature_batch(df: pd.DataFrame) -> pd.DataFrame:
         if col in df.columns:
             df[col] = df[col].fillna(0.0)
 
-    # Cap failed_txn_rate at 1.0 (edge case: ClickHouse division rounding)
+    # failed_txn_rate is failed/total, so it is mathematically <= 1. Tolerate
+    # tiny float-division rounding just above 1.0 (clip to 1.0), but let a
+    # genuinely out-of-range value (e.g. 1.5) fall through to Check.le(1) and
+    # fail loudly — silently clipping it would mask an upstream computation bug.
     if "failed_txn_rate_30d" in df.columns:
-        df["failed_txn_rate_30d"] = df["failed_txn_rate_30d"].clip(0.0, 1.0)
+        rate = df["failed_txn_rate_30d"]
+        df["failed_txn_rate_30d"] = rate.mask((rate > 1.0) & (rate <= 1.01), 1.0).clip(lower=0.0)
 
     try:
         validated = FEATURE_SCHEMA.validate(df, lazy=True)
@@ -124,7 +128,10 @@ def validate_single_entity(features: dict[str, float]) -> dict[str, float]:
     Validate a single entity's feature dict (used in on-demand path).
     Returns validated features with NaN → 0 substitution.
     """
-    df = pd.DataFrame([{"entity_id": 0, **features}])
+    # entity_id here is a required-by-schema placeholder; the caller's real id
+    # (if present in `features`) overrides it. Use 1, not 0, so the schema's
+    # Check.ge(1) passes for the internal single-entity validation frame.
+    df = pd.DataFrame([{"entity_id": 1, **features}])
     validated = validate_feature_batch(df)
     result = validated.iloc[0].to_dict()
     result.pop("entity_id", None)
