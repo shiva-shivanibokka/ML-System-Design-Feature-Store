@@ -2,8 +2,10 @@
 import { useEffect } from "react";
 import { api, Feature } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
+import { humanize, describeFeature } from "@/lib/format";
 import { DataState } from "./DataState";
 import LineageGraph from "./LineageGraph";
+import Tip from "./Tip";
 
 export default function FeatureExplorer() {
   const { data: rows, loading, error, run } = useApi<Feature[]>();
@@ -16,7 +18,10 @@ export default function FeatureExplorer() {
     <div className="stack">
       <div className="stack-head">
         <div className="stack-head-text">
-          <h2 className="stack-title">Feature Registry</h2>
+          <h2 className="stack-title">
+            Feature Registry
+            <Tip text="Every feature currently registered in the feature store, with its type, source table, owner, and tags." />
+          </h2>
           <p className="stack-sub">
             Every feature currently defined in <code className="mono">feature_store/features.py</code>.
           </p>
@@ -32,7 +37,10 @@ export default function FeatureExplorer() {
 
       <div className="card">
         <div className="card-head">
-          <span className="section-label">Registered features</span>
+          <span className="section-label">
+            Registered features
+            <Tip text="Full feature registry — one row per feature defined in feature_store/features.py." />
+          </span>
         </div>
         <DataState
           loading={loading}
@@ -45,18 +53,38 @@ export default function FeatureExplorer() {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Feature</th>
-                  <th>Type</th>
-                  <th>Source table</th>
-                  <th>Owner</th>
-                  <th>Tags</th>
-                  <th>Description</th>
+                  <th>
+                    Feature
+                    <Tip text="The feature's key, as used in lookups and training data — hover a name to see its raw key." />
+                  </th>
+                  <th>
+                    Type
+                    <Tip text="The feature's data type." />
+                  </th>
+                  <th>
+                    Source table
+                    <Tip text="The raw table this feature is computed from." />
+                  </th>
+                  <th>
+                    Owner
+                    <Tip text="Team or person responsible for this feature." />
+                  </th>
+                  <th>
+                    Tags
+                    <Tip text="Free-form labels used to group related features." />
+                  </th>
+                  <th>
+                    Description
+                    <Tip text="What this feature measures." />
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {rows?.map((f) => (
                   <tr key={f.feature_name}>
-                    <td className="mono">{f.feature_name}</td>
+                    <td className="mono" title={f.feature_name}>
+                      {humanize(f.feature_name)}
+                    </td>
                     <td className="num">{f.dtype}</td>
                     <td className="mono">{f.source_table}</td>
                     <td>{f.owner}</td>
@@ -67,7 +95,9 @@ export default function FeatureExplorer() {
                         </span>
                       ))}
                     </td>
-                    <td style={{ color: "var(--text-dim)" }}>{f.description}</td>
+                    <td style={{ color: "var(--text-dim)" }}>
+                      {f.description || describeFeature(f.feature_name)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -78,7 +108,10 @@ export default function FeatureExplorer() {
 
       <div className="card">
         <div className="card-head">
-          <span className="section-label">Lineage graph</span>
+          <span className="section-label">
+            Lineage graph
+            <Tip text="A directed graph showing how raw tables flow into derived features and into the trained model." />
+          </span>
         </div>
         <LineageGraph />
       </div>

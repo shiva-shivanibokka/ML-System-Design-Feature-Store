@@ -5,12 +5,14 @@ import FeatureExplorer from "@/components/FeatureExplorer";
 import TrainingPull from "@/components/TrainingPull";
 import SkewReport from "@/components/SkewReport";
 import MaterializationLog from "@/components/MaterializationLog";
+import AboutTab from "@/components/AboutTab";
 
 const TABS = [
   { id: "explorer", number: "01", label: "Explorer", Component: FeatureExplorer },
   { id: "training", number: "02", label: "Training Pull", Component: TrainingPull },
   { id: "skew", number: "03", label: "Skew Report", Component: SkewReport },
   { id: "materialization", number: "04", label: "Materialization", Component: MaterializationLog },
+  { id: "about", number: "05", label: "About", Component: AboutTab },
 ] as const;
 
 export default function Home() {

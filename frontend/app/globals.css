@@ -34,7 +34,7 @@
 
   --radius: 5px;
   --radius-lg: 14px;
-  --gutter: clamp(1.25rem, 5vw, 64px);
+  --gutter: clamp(1rem, 5vw, 192px);
   --font-sans: var(--font-inter), -apple-system, "Segoe UI", system-ui, sans-serif;
   --font-mono: var(--font-plex-mono), ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
@@ -150,14 +150,16 @@ table {
 
 /* ---- page shell ---- */
 .wrap {
-  max-width: 1100px;
-  margin: 0 auto;
+  max-width: none;
+  margin: 0;
   padding: 3rem var(--gutter) 5rem;
+  width: 100%;
 }
 
 .hero {
   padding-bottom: 1.75rem;
   border-bottom: 1px solid var(--border);
+  width: 100%;
 }
 .hero h1 {
   font-family: var(--font-mono);
@@ -173,7 +175,7 @@ table {
 }
 .hero p {
   color: var(--text-dim);
-  max-width: 72ch;
+  width: 100%;
   font-size: clamp(0.92rem, 1.3vw, 1.02rem);
   line-height: 1.7;
 }
@@ -314,6 +316,8 @@ table {
   gap: 4px;
 }
 .stack-title {
+  display: flex;
+  align-items: center;
   font-family: var(--font-mono);
   font-size: 13px;
   font-weight: 600;
@@ -324,7 +328,7 @@ table {
 .stack-sub {
   font-size: 13.5px;
   color: var(--text-dim);
-  max-width: 62ch;
+  width: 100%;
   line-height: 1.6;
 }
 
@@ -356,6 +360,8 @@ table {
   border-bottom: 1px solid var(--border);
 }
 .section-label {
+  display: inline-flex;
+  align-items: center;
   font-family: var(--font-mono);
   font-size: 12px;
   letter-spacing: 0.06em;
@@ -518,6 +524,9 @@ table {
   line-height: 1.15;
 }
 .tile .tile-k {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-family: var(--font-mono);
   font-size: 0.63rem;
   color: var(--text-dim);
@@ -766,4 +775,104 @@ table {
   font-family: var(--font-mono);
   font-size: 10px;
   fill: var(--text);
+}
+
+/* ---- tooltip: small "?" help popover on headers, tiles, columns ---- */
+.tip {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 0.4rem;
+}
+.tip > .q {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  cursor: help;
+  font-size: 0.65rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--cyan);
+  background: var(--cyan-dim);
+  border: 1px solid rgba(69, 208, 196, 0.45);
+}
+.tip .pop {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  width: max-content;
+  max-width: 260px;
+  padding: 0.6rem 0.7rem;
+  border-radius: 8px;
+  z-index: 20;
+  background: var(--panel-solid);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  line-height: 1.45;
+  box-shadow: 0 14px 40px -12px rgba(0, 0, 0, 0.85);
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.16s ease;
+  pointer-events: none;
+}
+.tip:hover .pop,
+.tip:focus-within .pop {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ---- about tab ---- */
+.about {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.about h3 {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text);
+}
+.about p,
+.about li {
+  color: var(--text-dim);
+  font-size: 13.5px;
+  line-height: 1.7;
+}
+.about ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 0;
+}
+.about li strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.about-flow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+.about-flow .arrow {
+  color: var(--text-faint);
+}
+.about-stack {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }

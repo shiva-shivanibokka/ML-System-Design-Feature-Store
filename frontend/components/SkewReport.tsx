@@ -2,7 +2,9 @@
 import { useEffect } from "react";
 import { api, SkewRow } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
+import { humanize } from "@/lib/format";
 import { DataState } from "./DataState";
+import Tip from "./Tip";
 
 const KS_THRESHOLD = 0.05;
 
@@ -22,7 +24,10 @@ export default function SkewReport() {
     <div className="stack">
       <div className="stack-head">
         <div className="stack-head-text">
-          <h2 className="stack-title">Training vs. Serving Skew</h2>
+          <h2 className="stack-title">
+            Training vs. Serving Skew
+            <Tip text="Compares the feature distribution captured at training time against the live serving distribution to catch training-serving skew." />
+          </h2>
           <p className="stack-sub">
             Two-sample Kolmogorov–Smirnov test between the training-time feature distribution and the
             live serving distribution. A feature is flagged when its KS statistic exceeds the p = 0.05
@@ -37,13 +42,19 @@ export default function SkewReport() {
           <div className="readout-big">
             {flaggedCount} / {rows.length}
           </div>
-          <div className="readout-lbl">features flagged for drift</div>
+          <div className="readout-lbl">
+            features flagged for drift
+            <Tip text="Count of features whose serving distribution has statistically significant drift from training (KS test p < 0.05)." />
+          </div>
         </div>
       )}
 
       <div className="card">
         <div className="card-head">
-          <span className="section-label">KS statistic by feature</span>
+          <span className="section-label">
+            KS statistic by feature
+            <Tip text="Kolmogorov–Smirnov distance between training and serving distributions for each feature — higher bars indicate more drift." />
+          </span>
           {rows.length > 0 && (
             <span className={flaggedCount > 0 ? "badge badge-flagged" : "badge badge-ok"}>
               {flaggedCount > 0 ? `${flaggedCount} flagged` : "no skew detected"}
@@ -76,7 +87,7 @@ export default function SkewReport() {
               {rows.map((r) => (
                 <div className="bar-row" key={r.feature_name}>
                   <span className="bar-name" title={r.feature_name}>
-                    {r.feature_name}
+                    {humanize(r.feature_name)}
                   </span>
                   <span className="bar-track">
                     <span
@@ -96,25 +107,51 @@ export default function SkewReport() {
       {rows.length > 0 && (
         <div className="card">
           <div className="card-head">
-            <span className="section-label">Per-feature detail</span>
+            <span className="section-label">
+              Per-feature detail
+              <Tip text="Full skew statistics per feature." />
+            </span>
           </div>
           <div className="table-wrap">
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Feature</th>
-                  <th>Training mean</th>
-                  <th>Serving mean</th>
-                  <th>Mean shift</th>
-                  <th>KS statistic</th>
-                  <th>KS p-value</th>
-                  <th>Status</th>
+                  <th>
+                    Feature
+                    <Tip text="The feature being compared between training and serving." />
+                  </th>
+                  <th>
+                    Training mean
+                    <Tip text="Mean value of this feature in the training-time snapshot." />
+                  </th>
+                  <th>
+                    Serving mean
+                    <Tip text="Mean value of this feature in current live serving data." />
+                  </th>
+                  <th>
+                    Mean shift
+                    <Tip text="Difference in mean between training and serving, in training std-devs." />
+                  </th>
+                  <th>
+                    KS statistic
+                    <Tip text="Kolmogorov–Smirnov distance between the training and serving distributions (higher = more drift)." />
+                  </th>
+                  <th>
+                    KS p-value
+                    <Tip text="Probability the two distributions are the same; < 0.05 is flagged as skew." />
+                  </th>
+                  <th>
+                    Status
+                    <Tip text="Whether this feature's drift is statistically significant (p < 0.05)." />
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.feature_name}>
-                    <td className="mono">{r.feature_name}</td>
+                    <td className="mono" title={r.feature_name}>
+                      {humanize(r.feature_name)}
+                    </td>
                     <td className="num">{r.training_mean.toFixed(3)}</td>
                     <td className="num">{r.serving_mean.toFixed(3)}</td>
                     <td className="num">{r.mean_shift.toFixed(3)}</td>

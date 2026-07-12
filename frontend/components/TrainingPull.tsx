@@ -2,7 +2,9 @@
 import { FormEvent, useState } from "react";
 import { api, BatchResult } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
+import { humanize, describeFeature } from "@/lib/format";
 import { DataState } from "./DataState";
+import Tip from "./Tip";
 
 export default function TrainingPull() {
   const [input, setInput] = useState("1, 2, 3, 4, 5");
@@ -22,7 +24,10 @@ export default function TrainingPull() {
     <div className="stack">
       <div className="stack-head">
         <div className="stack-head-text">
-          <h2 className="stack-title">Training Pull</h2>
+          <h2 className="stack-title">
+            Training Pull
+            <Tip text="Simulates a training job's feature fetch: pull point-in-time features for a batch of entity IDs the same way the training pipeline does." />
+          </h2>
           <p className="stack-sub">
             Fetch current features for a batch of entities the way a training job would — served from
             the online store when materialized, computed on demand otherwise.
@@ -55,7 +60,10 @@ export default function TrainingPull() {
 
       <div className="card">
         <div className="card-head">
-          <span className="section-label">Results</span>
+          <span className="section-label">
+            Results
+            <Tip text="Feature values returned for each requested entity ID." />
+          </span>
         </div>
         <DataState
           loading={loading}
@@ -70,19 +78,31 @@ export default function TrainingPull() {
                 <div className="tiles">
                   <div className="tile">
                     <div className="tile-v">{data.hits}</div>
-                    <div className="tile-k">Online hits</div>
+                    <div className="tile-k">
+                      Online hits
+                      <Tip text="Requests served directly from the online store (Valkey) without recomputation." />
+                    </div>
                   </div>
                   <div className="tile">
                     <div className="tile-v">{data.on_demand_computed}</div>
-                    <div className="tile-k">Computed on demand</div>
+                    <div className="tile-k">
+                      Computed on demand
+                      <Tip text="Requests with no cached value, computed live from the offline store." />
+                    </div>
                   </div>
                   <div className="tile">
                     <div className="tile-v">{data.misses}</div>
-                    <div className="tile-k">Misses</div>
+                    <div className="tile-k">
+                      Misses
+                      <Tip text="Requests where no feature value could be produced." />
+                    </div>
                   </div>
                   <div className="tile">
                     <div className="tile-v">{data.latency_ms.toFixed(1)}</div>
-                    <div className="tile-k">Latency (ms)</div>
+                    <div className="tile-k">
+                      Latency (ms)
+                      <Tip text="Total time to fetch or compute this batch, in milliseconds." />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -90,9 +110,15 @@ export default function TrainingPull() {
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th>Entity</th>
+                      <th>
+                        Entity
+                        <Tip text="The requested entity ID." />
+                      </th>
                       {featureCols.map((c) => (
-                        <th key={c}>{c}</th>
+                        <th key={c} title={c}>
+                          {humanize(c)}
+                          <Tip text={describeFeature(c)} />
+                        </th>
                       ))}
                     </tr>
                   </thead>

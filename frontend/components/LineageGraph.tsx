@@ -2,6 +2,7 @@
 import { useEffect, useMemo } from "react";
 import { api, LineageGraph as LineageGraphData, LineageNode } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
+import { humanize } from "@/lib/format";
 import { DataState } from "./DataState";
 
 const TYPE_ORDER: LineageNode["type"][] = ["raw_table", "feature", "model"];
@@ -116,7 +117,7 @@ export default function LineageGraph() {
                   }
                 />
                 <text x={39} y={19} textAnchor="middle" className="lineage-node-label">
-                  {truncate(n.id, 12)}
+                  {truncate(n.type === "feature" ? humanize(n.id) : n.id, 12)}
                 </text>
                 <title>{n.id}</title>
               </g>
