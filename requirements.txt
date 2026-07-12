@@ -1,21 +1,17 @@
-# =============================================================================
-# Full local development requirements
-# For Docker builds, use requirements.api.txt and requirements.gradio.txt
-# =============================================================================
-
-# API + Feature Store core
+# API + feature store core
 fastapi==0.111.0
 uvicorn[standard]==0.30.1
 pydantic==2.7.1
 httpx==0.27.0
-clickhouse-driver==0.2.7
+duckdb==1.1.3
 redis==5.0.4
 pandera==0.20.0
 
-# ML + Training
+# ML + training
 lightgbm==4.3.0
 scikit-learn==1.4.2
 mlflow==2.13.0
+dagshub==0.3.35
 
 # Data
 pandas==2.2.2
@@ -27,13 +23,6 @@ Faker==25.2.0
 # Observability
 structlog==24.2.0
 
-# UI
-gradio==4.36.1
-plotly==5.22.0
-
-# Scheduling
-APScheduler==3.10.4
-
 # Config
 pyyaml==6.0.1
 python-dotenv==1.0.1
@@ -42,3 +31,4 @@ python-dotenv==1.0.1
 ruff==0.4.8
 pytest==8.2.2
 pytest-cov==5.0.0
+fakeredis==2.23.2
