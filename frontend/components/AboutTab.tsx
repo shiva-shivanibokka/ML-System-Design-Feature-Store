@@ -4,9 +4,9 @@ import Tip from "./Tip";
  * Plain-English explainer tab: the problem this project solves, how every
  * major design decision traces back to that problem, what each tab shows,
  * and the full tech stack. Static content — no API calls, so no
- * useApi/DataState here. Deliberately long-form and unbounded in height;
- * it scrolls with the page like any other prose page, never in its own
- * clipped box.
+ * useApi/DataState here. Long-form: the title stays fixed and the body
+ * scrolls inside a bounded box (.scroll-y-tall) so the tab doesn't stretch
+ * the whole page.
  */
 export default function AboutTab() {
   return (
@@ -24,6 +24,7 @@ export default function AboutTab() {
         </div>
       </div>
 
+      <div className="stack scroll-y-tall">
       <div className="card">
         <div className="card-head">
           <span className="section-label">What this is</span>
@@ -384,6 +385,7 @@ export default function AboutTab() {
             ))}
           </div>
         </div>
+      </div>
       </div>
     </div>
   );

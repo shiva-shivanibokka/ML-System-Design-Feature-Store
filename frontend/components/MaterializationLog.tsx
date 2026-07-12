@@ -52,7 +52,7 @@ export default function MaterializationLog() {
           emptyMessage="No materialization runs recorded yet."
           onRetry={() => runsApi.run(api.materializationLog())}
         >
-          <div style={{ padding: "18px" }}>
+          <div className="scroll-y" style={{ padding: "18px" }}>
             <div className="bars">
               {chartData.map((d, i) => (
                 <div className="bar-row" key={`${d.run}-${i}`}>
@@ -87,7 +87,7 @@ export default function MaterializationLog() {
           emptyMessage="No materialization runs recorded yet."
           onRetry={() => runsApi.run(api.materializationLog())}
         >
-          <div className="table-wrap">
+          <div className="table-wrap scroll-y">
             <table className="data-table">
               <thead>
                 <tr>

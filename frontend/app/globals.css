@@ -388,6 +388,39 @@ table {
 .table-wrap.scroll-x {
   overflow-x: auto;
 }
+
+/* ---- bounded internal scroll (long run lists, charts, About prose) ---- */
+.scroll-y {
+  max-height: 360px;
+  overflow-y: auto;
+}
+.scroll-y-tall {
+  max-height: 66vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.scroll-y::-webkit-scrollbar,
+.scroll-y-tall::-webkit-scrollbar {
+  width: 9px;
+}
+.scroll-y::-webkit-scrollbar-thumb,
+.scroll-y-tall::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+}
+.scroll-y,
+.scroll-y-tall {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+/* keep table headers visible while the body scrolls */
+.table-wrap.scroll-y thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--panel-solid);
+}
+
 .data-table {
   width: 100%;
   font-size: 15px;
