@@ -11,7 +11,6 @@ Responsibilities:
   - Provide get_feature_names() for use by offline store and validator
 """
 
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any

@@ -23,7 +23,7 @@ from __future__ import annotations
 import pandas as pd
 import pandera as pa
 import structlog
-from pandera import Column, DataFrameSchema, Check
+from pandera import Check, Column, DataFrameSchema
 
 log = structlog.get_logger()
 
@@ -105,7 +105,9 @@ def validate_feature_batch(df: pd.DataFrame) -> pd.DataFrame:
     # fail loudly — silently clipping it would mask an upstream computation bug.
     if "failed_txn_rate_30d" in df.columns:
         rate = df["failed_txn_rate_30d"]
-        df["failed_txn_rate_30d"] = rate.mask((rate > 1.0) & (rate <= 1.01), 1.0).clip(lower=0.0)
+        df["failed_txn_rate_30d"] = rate.mask((rate > 1.0) & (rate <= 1.01), 1.0).clip(
+            lower=0.0
+        )
 
     try:
         validated = FEATURE_SCHEMA.validate(df, lazy=True)

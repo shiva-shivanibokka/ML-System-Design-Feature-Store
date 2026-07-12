@@ -1,4 +1,5 @@
 """Apply the DuckDB schema (idempotent CREATE TABLE IF NOT EXISTS statements)."""
+
 from pathlib import Path
 
 _SCHEMA_PATH = Path(__file__).parent.parent / "configs" / "schema.sql"

@@ -15,6 +15,7 @@ Online store:
   - redis.from_url(REDIS_URL). Upstash provides an rediss:// URL; local dev
     defaults to redis://localhost:6379.
 """
+
 from __future__ import annotations
 
 import os

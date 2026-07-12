@@ -5,12 +5,11 @@ Unit tests for the Pandera feature schema validator.
 These tests run without ClickHouse or Redis — pure logic tests.
 """
 
-import pandas as pd
-import pytest
-import pandera.errors
-
 import sys
 from pathlib import Path
+
+import pandas as pd
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 

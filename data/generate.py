@@ -17,7 +17,6 @@ import argparse
 import os
 import random
 import sys
-import uuid
 from datetime import datetime, timedelta
 
 import numpy as np

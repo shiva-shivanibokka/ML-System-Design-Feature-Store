@@ -19,7 +19,6 @@ Usage:
 """
 
 import argparse
-import json
 import os
 import sys
 import uuid
@@ -29,7 +28,6 @@ from pathlib import Path
 import lightgbm as lgb
 import mlflow
 import mlflow.lightgbm
-import numpy as np
 import pandas as pd
 import structlog
 from sklearn.metrics import (
@@ -48,7 +46,6 @@ from feature_store.offline_store import (
     get_latest_features_for_entities,
     get_training_dataset,
 )
-from feature_store.registry import load_feature_config
 
 log = structlog.get_logger()
 

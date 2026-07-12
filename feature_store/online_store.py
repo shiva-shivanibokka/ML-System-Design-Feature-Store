@@ -20,12 +20,10 @@ The on-demand fallback (ClickHouse query) lives in serving/feature_server.py.
 from __future__ import annotations
 
 import time
-from typing import Optional
 
 import structlog
 
 from feature_store.connections import get_redis_client
-from feature_store.features import FEATURE_COLS
 
 log = structlog.get_logger()
 

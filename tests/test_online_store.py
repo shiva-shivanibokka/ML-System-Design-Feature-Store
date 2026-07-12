@@ -1,4 +1,5 @@
 import fakeredis
+
 from feature_store import online_store as onl
 
 

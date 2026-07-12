@@ -6,6 +6,7 @@ on-demand serving, and PIT training joins — computes features from THIS SQL.
 Duplicating this logic anywhere else reintroduces training-serving skew, the
 exact bug this project exists to prevent.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta
@@ -17,11 +18,19 @@ from feature_store.validator import validate_single_entity
 log = structlog.get_logger()
 
 FEATURE_COLS = [
-    "txn_count_7d", "txn_count_30d", "txn_count_90d",
-    "total_spend_7d", "total_spend_30d", "total_spend_90d",
-    "avg_txn_amount_30d", "failed_txn_rate_30d", "days_since_last_txn",
-    "open_tickets", "ticket_rate_30d",
-    "account_age_days", "plan_encoded",
+    "txn_count_7d",
+    "txn_count_30d",
+    "txn_count_90d",
+    "total_spend_7d",
+    "total_spend_30d",
+    "total_spend_90d",
+    "avg_txn_amount_30d",
+    "failed_txn_rate_30d",
+    "days_since_last_txn",
+    "open_tickets",
+    "ticket_rate_30d",
+    "account_age_days",
+    "plan_encoded",
 ]
 
 
@@ -118,10 +127,15 @@ def _windows(snapshot_time: datetime, version: str) -> dict:
     }
 
 
-def compute_and_store(client, snapshot_time: datetime, feature_version: str = "v1") -> int:
+def compute_and_store(
+    client, snapshot_time: datetime, feature_version: str = "v1"
+) -> int:
     params = _windows(snapshot_time, feature_version)
-    insert_cols = "(entity_id, entity_type, feature_version, event_time, " + \
-        ", ".join(FEATURE_COLS) + ")"
+    insert_cols = (
+        "(entity_id, entity_type, feature_version, event_time, "
+        + ", ".join(FEATURE_COLS)
+        + ")"
+    )
     client.execute(
         f"INSERT INTO feature_history {insert_cols} " + feature_select_sql(),
         params,
@@ -136,7 +150,9 @@ def compute_and_store(client, snapshot_time: datetime, feature_version: str = "v
     return count
 
 
-def compute_on_demand(client, entity_id: int, feature_version: str = "v1") -> dict | None:
+def compute_on_demand(
+    client, entity_id: int, feature_version: str = "v1"
+) -> dict | None:
     params = _windows(datetime.utcnow(), feature_version)
     params["uid"] = entity_id
     rows = client.execute(

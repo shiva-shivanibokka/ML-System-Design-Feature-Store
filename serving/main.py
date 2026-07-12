@@ -30,20 +30,18 @@ Endpoints:
 from __future__ import annotations
 
 import os
+import sys
 import time
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Optional
+from pathlib import Path
 
 import structlog
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-
-import sys
-from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -55,8 +53,8 @@ from feature_store.online_store import (
     get_online_store_size,
 )
 from feature_store.registry import get_all_features, sync_registry
-from skew.detector import compute_skew_report
 from lineage.graph import get_full_lineage_graph, get_lineage_for_feature
+from skew.detector import compute_skew_report
 
 log = structlog.get_logger()
 
@@ -349,7 +347,6 @@ async def materialization_log(limit: int = Query(default=50)):
 @app.get("/metrics")
 async def serving_metrics():
     """Return p50/p95/p99 latency breakdown by serving path."""
-    import statistics
 
     def percentiles(values: list[float]) -> dict:
         if not values:
