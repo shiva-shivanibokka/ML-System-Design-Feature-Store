@@ -8,8 +8,10 @@ so the project runs with zero cloud accounts for local development.
 Offline store:
   - If MOTHERDUCK_TOKEN is set, connect to MotherDuck (`md:<db>`).
   - Otherwise open a local DuckDB file (DUCKDB_PATH).
-DuckDB connections are not safe to share across threads; every _DuckClient.execute
-runs on a fresh cursor of the singleton connection, which IS thread-safe.
+DuckDB connections are not safe for concurrent access from multiple threads, so
+_DuckClient serializes every execute()/register() call on the one singleton
+connection behind a lock (register() must bind DataFrames to that exact
+connection object, which rules out a fresh cursor per call).
 
 Online store:
   - redis.from_url(REDIS_URL). Upstash provides an rediss:// URL; local dev

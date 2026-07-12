@@ -3,7 +3,7 @@ feature_store/validator.py
 ==========================
 Feature schema validation using Pandera.
 
-Validates every feature write before it hits ClickHouse to prevent:
+Validates every feature write before it hits the offline store (DuckDB) to prevent:
   - Null values in non-nullable features
   - Out-of-range values (e.g. negative counts, rates > 1)
   - Wrong data types

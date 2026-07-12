@@ -14,7 +14,7 @@ Two serving paths:
   batch_get()       — HGETALL from Redis (pre-materialized, <2ms)
   batch_get_multi() — pipeline of HGETALL for multiple entities
 
-The on-demand fallback (ClickHouse query) lives in serving/feature_server.py.
+The on-demand fallback (DuckDB query) lives in feature_store/features.py::compute_on_demand.
 """
 
 from __future__ import annotations

@@ -9,11 +9,11 @@ Two serving paths:
     Used for: known entities with history in the online store
 
   ON-DEMAND PATH (cold-start fallback):
-    ClickHouse query → computes features on the fly in ~20ms
+    DuckDB/MotherDuck query → computes features on the fly in ~20ms
     Used for: new entities not yet materialized, or after cache expiry
 
 Every request logs which path was taken + latency, enabling the
-training vs serving skew comparison in the Gradio dashboard.
+training vs serving skew comparison in the Next.js dashboard.
 
 Endpoints:
   GET  /health
@@ -109,7 +109,7 @@ app = FastAPI(
     title="ML Feature Store — Feature Server",
     description=(
         "Dual-path feature server: Redis online store (<2ms) with "
-        "ClickHouse on-demand fallback (~20ms). "
+        "DuckDB/MotherDuck on-demand fallback (~20ms). "
         "Prevents training-serving skew via centralized feature computation."
     ),
     version="1.0.0",
@@ -134,7 +134,7 @@ class FeatureResponse(BaseModel):
     entity_id: int
     features: dict[str, float]
     source: str = Field(
-        description="'online_store' (Redis) or 'on_demand' (ClickHouse)"
+        description="'online_store' (Redis) or 'on_demand' (DuckDB/MotherDuck)"
     )
     latency_ms: float
     feature_version: str
@@ -198,7 +198,7 @@ async def get_features(
     Dual-path feature retrieval for a single entity.
 
     1. Try Redis (batch path) — returns in <2ms if entity is materialized
-    2. Fall back to ClickHouse (on-demand path) — ~20ms, for cold entities
+    2. Fall back to DuckDB/MotherDuck (on-demand path) — ~20ms, for cold entities
     3. Validate features before returning
     """
     t0 = time.perf_counter()
@@ -241,7 +241,7 @@ async def get_features(
 async def get_features_batch(request: BatchFeatureRequest):
     """
     Bulk feature retrieval for up to 500 entities.
-    Uses Redis pipeline for batch hits, falls back to ClickHouse for misses.
+    Uses Redis pipeline for batch hits, falls back to DuckDB/MotherDuck for misses.
     """
     t0 = time.perf_counter()
 
