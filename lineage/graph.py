@@ -9,16 +9,16 @@ For every feature, we can answer:
   - Which models consume this feature?
   - What other features share the same source?
 
-The lineage_edges table in ClickHouse stores directed edges:
+The lineage_edges table in DuckDB stores directed edges:
   source_node → target_node (with edge_type: source | transform | model_input)
 
-The Gradio UI uses the nodes/edges from get_full_lineage_graph() to render
-an interactive Plotly network graph.
+The frontend uses the nodes/edges from get_full_lineage_graph() to render
+the lineage DAG.
 """
 
 from __future__ import annotations
 
-from feature_store.connections import get_clickhouse_client
+from feature_store.connections import get_duckdb_client
 
 
 def get_lineage_for_feature(
@@ -33,15 +33,15 @@ def get_lineage_for_feature(
 
     Returns a dict with nodes and edges for rendering.
     """
-    client = get_clickhouse_client()
+    client = get_duckdb_client()
 
     # Upstream edges (what feeds into this feature)
     upstream = client.execute(
         """
         SELECT source_node, target_node, edge_type
         FROM lineage_edges
-        WHERE target_node = %(feature)s
-          AND feature_version = %(version)s
+        WHERE target_node = $feature
+          AND feature_version = $version
         """,
         {"feature": feature_name, "version": feature_version},
     )
@@ -51,8 +51,8 @@ def get_lineage_for_feature(
         """
         SELECT source_node, target_node, edge_type
         FROM lineage_edges
-        WHERE source_node = %(feature)s
-          AND feature_version = %(version)s
+        WHERE source_node = $feature
+          AND feature_version = $version
         """,
         {"feature": feature_name, "version": feature_version},
     )
@@ -95,15 +95,15 @@ def get_lineage_for_feature(
 def get_full_lineage_graph(feature_version: str = "v1") -> dict:
     """
     Return the complete lineage graph across all features.
-    Used by the Gradio Feature Explorer tab to render the full DAG.
+    Used by the Feature Explorer tab to render the full DAG.
     """
-    client = get_clickhouse_client()
+    client = get_duckdb_client()
 
     rows = client.execute(
         """
         SELECT source_node, target_node, edge_type
         FROM lineage_edges
-        WHERE feature_version = %(version)s
+        WHERE feature_version = $version
         ORDER BY edge_type, source_node
         """,
         {"version": feature_version},
