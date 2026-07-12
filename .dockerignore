@@ -1,0 +1,11 @@
+.git
+frontend
+node_modules
+tests
+docs
+*.duckdb
+mlruns
+.venv
+__pycache__
+*.pyc
+.env
