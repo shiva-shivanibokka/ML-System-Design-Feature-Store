@@ -11,7 +11,8 @@ pandera==0.20.0
 lightgbm==4.3.0
 scikit-learn==1.4.2
 mlflow==2.13.0
-dagshub==0.3.35
+# DagsHub tracking works via MLFLOW_TRACKING_URI + username/password env vars —
+# no `dagshub` package needed (it pins httpx/fastapi ranges that conflict here).
 
 # Data
 pandas==2.2.2
