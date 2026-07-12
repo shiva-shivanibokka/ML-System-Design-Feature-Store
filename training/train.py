@@ -110,7 +110,7 @@ def generate_labels(client, n_users: int = 10_000) -> pd.DataFrame:
 
     df = pd.DataFrame(rows, columns=["entity_id", "txns_before", "txns_after"])
     # Churn: had activity before label date but none after
-    df["churned"] = ((df["txns_after"] == 0) & (df["txns_before"] >= 2)).astype(int)
+    df["churned"] = ((df["txns_after"] == 0) & (df["txns_before"] >= 5)).astype(int)
     df["label_timestamp"] = label_date
 
     churn_rate = df["churned"].mean()
