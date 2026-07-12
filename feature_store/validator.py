@@ -79,21 +79,12 @@ def validate_feature_batch(df: pd.DataFrame) -> pd.DataFrame:
     Raises pandera.errors.SchemaError on violation.
     Returns the (possibly coerced) DataFrame.
     """
-    numerical_cols = [
-        "txn_count_7d",
-        "txn_count_30d",
-        "txn_count_90d",
-        "total_spend_7d",
-        "total_spend_30d",
-        "total_spend_90d",
-        "avg_txn_amount_30d",
-        "failed_txn_rate_30d",
-        "days_since_last_txn",
-        "open_tickets",
-        "ticket_rate_30d",
-        "account_age_days",
-        "plan_encoded",
-    ]
+    # Imported lazily (not at module level) because feature_store.features
+    # imports validate_single_entity from this module — a module-level import
+    # here would be circular. FEATURE_COLS is the single source of truth for
+    # the feature column list; duplicating it here would let the two drift.
+    from feature_store.features import FEATURE_COLS as numerical_cols
+
     # Users with zero transactions → avg and days_since come back as NaN
     for col in numerical_cols:
         if col in df.columns:
