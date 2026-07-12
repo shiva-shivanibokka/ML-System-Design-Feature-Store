@@ -6,11 +6,18 @@ Runs without ClickHouse — tests the statistical comparison directly.
 """
 
 import sys
+import uuid
+from datetime import datetime
 from pathlib import Path
+
+import duckdb
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from skew.detector import _run_ks_test
+from feature_store.connections import _DuckClient
+from feature_store.schema import apply_schema
+from skew import detector
+from skew.detector import _run_ks_test, compute_skew_report
 
 
 class TestKSTest:
@@ -77,3 +84,34 @@ class TestKSTest:
         result = _run_ks_test(self._make_stats(5.0, 1.0), self._make_stats(50.0, 1.0), "f")
         assert type(result["flagged"]) is bool
         json.dumps(result)  # raises if any numpy scalar leaked in
+
+
+def test_empty_window_excludes_feature_instead_of_fabricating(monkeypatch):
+    """No recent feature_history rows -> the serving snapshot must skip the
+    feature rather than write a fake mean=0/std=0 row that gets KS-tested
+    against a real training baseline and flagged as skew."""
+    client = _DuckClient(duckdb.connect(":memory:"))
+    apply_schema(client)
+    monkeypatch.setattr(detector, "get_duckdb_client", lambda: client)
+
+    # Seed only a training snapshot for one feature; feature_history stays empty
+    # so the serving window has zero rows for every feature.
+    client.execute(
+        """
+        INSERT INTO skew_snapshots
+        (snapshot_id, feature_name, feature_version, context,
+         mean, std, p25, p50, p75, p95, null_rate, sample_count, captured_at)
+        VALUES
+        ($sid, 'txn_count_7d', 'v1', 'training', 10, 2, 8, 10, 12, 14, 0.0, 500, $now)
+        """,
+        {"sid": str(uuid.uuid4())[:12], "now": datetime(2024, 1, 1)},
+    )
+
+    report = compute_skew_report(feature_version="v1")
+
+    assert report == []
+    # Confirm nothing fabricated for the empty window either.
+    rows = client.execute(
+        "SELECT count(*) FROM skew_snapshots WHERE context = 'serving'"
+    )
+    assert rows[0][0] == 0

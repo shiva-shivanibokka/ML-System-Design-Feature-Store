@@ -71,7 +71,7 @@ def _capture_serving_snapshot(client, feature_version: str) -> str:
             """,
             {"version": feature_version, "since": since},
         )
-        if result:
+        if result and result[0][0] is not None:
             mean, std, p25, p50, p75, p95, null_rate, n = result[0]
             client.execute(
                 """
