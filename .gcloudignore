@@ -1,0 +1,18 @@
+# Keep the Cloud Build upload small and secrets local.
+.git
+.github
+frontend
+node_modules
+tests
+docs
+mlruns
+*.duckdb
+*.duckdb.wal
+.venv
+__pycache__
+*.pyc
+.env
+.env.*
+!.env.example
+.superpowers
+docker-compose.yml
