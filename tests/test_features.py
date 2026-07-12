@@ -105,3 +105,13 @@ def test_on_demand_matches_stored_features():
     # counts. Guard only the version-stable feature to prove the shared SQL path.
     assert on_demand is not None
     assert on_demand["plan_encoded"] == stored[1]
+
+
+def test_compute_on_demand_batch_matches_single_entity_calls_and_handles_unknown():
+    client = _DuckClient(duckdb.connect(":memory:"))
+    _seed(client)
+    single = features.compute_on_demand(client, entity_id=1, feature_version="v1")
+    batch = features.compute_on_demand_batch(client, [1, 999], feature_version="v1")
+    assert batch[1] is not None
+    assert batch[1]["plan_encoded"] == single["plan_encoded"]
+    assert batch[999] is None  # unknown entity resolves to None, not dropped

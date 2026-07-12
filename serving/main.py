@@ -40,12 +40,14 @@ import structlog
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from feature_store.connections import get_duckdb_client, get_redis_client
-from feature_store.features import compute_on_demand
+from feature_store.features import compute_on_demand, compute_on_demand_batch
 from feature_store.online_store import (
     get_entities_batch,
     get_entity,
@@ -73,6 +75,14 @@ structlog.configure(
 # ---------------------------------------------------------------------------
 _latency_log: list[dict] = []
 MAX_LATENCY_LOG = 1000
+
+# ---------------------------------------------------------------------------
+# In-process /skew-report cache — MotherDuck free tier is 10 compute-hrs/month;
+# an unauthenticated GET recomputing + writing a snapshot on every hit can
+# exhaust it. Short TTL, keyed by feature_version.
+# ---------------------------------------------------------------------------
+_skew_cache: dict[str, tuple[float, dict]] = {}
+_SKEW_TTL = 300  # seconds
 
 
 def _record_latency(path: str, latency_ms: float, hit: bool) -> None:
@@ -169,17 +179,50 @@ class SkewReport(BaseModel):
 
 @app.get("/health")
 async def health():
+    """
+    Component-level health check.
+
+    Redis is checked with a ping. DuckDB is checked with a real table read
+    (`feature_registry`) rather than `SELECT 1` — a bare `SELECT 1` succeeds
+    even when `apply_schema`/`sync_registry` never ran, which used to let a
+    broken deploy (missing schema) report "ok" while every real request 500s.
+
+    Returns 200 ("ok" if every component is healthy, "degraded" if only
+    some are) and 503 only when every component is down.
+    """
+    status: dict[str, str] = {}
+
     try:
-        get_duckdb_client().execute("SELECT 1")
-        get_redis_client().ping()
+        await run_in_threadpool(lambda: get_redis_client().ping())
+        status["redis"] = "ok"
     except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"dependency down: {exc}")
-    return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
+        status["redis"] = f"down: {exc}"
+
+    try:
+        await run_in_threadpool(
+            lambda: get_duckdb_client().execute("SELECT count(*) FROM feature_registry")
+        )
+        status["duckdb"] = "ok"
+    except Exception as exc:
+        status["duckdb"] = f"down: {exc}"
+
+    all_ok = all(v == "ok" for v in status.values())
+    any_ok = any(v == "ok" for v in status.values())
+    overall = "ok" if all_ok else ("degraded" if any_ok else "down")
+
+    return JSONResponse(
+        status_code=200 if any_ok else 503,
+        content={
+            "status": overall,
+            "components": status,
+            "timestamp": datetime.utcnow().isoformat(),
+        },
+    )
 
 
 @app.get("/lineage")
 async def full_lineage(feature_version: str = Query(default="v1")):
-    return get_full_lineage_graph(feature_version=feature_version)
+    return await run_in_threadpool(get_full_lineage_graph, feature_version=feature_version)
 
 
 @app.get("/features/{entity_id}", response_model=FeatureResponse)
@@ -198,13 +241,15 @@ async def get_features(
     structlog.contextvars.bind_contextvars(request_id=str(uuid.uuid4())[:8])
 
     # ── Batch path ─────────────────────────────────────────────────────────
-    features = get_entity(entity_id)
+    features = await run_in_threadpool(get_entity, entity_id)
     source = "online_store"
 
     if features is None:
         # ── On-demand path ──────────────────────────────────────────────────
         log.info("on_demand_fallback", entity_id=entity_id)
-        features = compute_on_demand(get_duckdb_client(), entity_id, feature_version)
+        features = await run_in_threadpool(
+            compute_on_demand, get_duckdb_client(), entity_id, feature_version
+        )
         source = "on_demand"
 
         if features is None:
@@ -239,17 +284,22 @@ async def get_features_batch(request: BatchFeatureRequest):
     t0 = time.perf_counter()
 
     # ── Batch path: all entities via Redis pipeline ────────────────────────
-    online_results = get_entities_batch(request.entity_ids)
+    online_results = await run_in_threadpool(get_entities_batch, request.entity_ids)
     hits = sum(1 for v in online_results.values() if v is not None)
     misses = [eid for eid, v in online_results.items() if v is None]
 
-    # ── On-demand fallback for misses ──────────────────────────────────────
+    # ── On-demand fallback for misses — ONE batched query instead of one
+    # MotherDuck round-trip per miss (holding the DuckDB lock for the whole
+    # request otherwise). Validation still happens per-entity.
     on_demand_count = 0
-    for eid in misses:
-        features = compute_on_demand(get_duckdb_client(), eid, request.feature_version)
-        if features is not None:
-            online_results[eid] = features
-            on_demand_count += 1
+    if misses:
+        on_demand_results = await run_in_threadpool(
+            compute_on_demand_batch, get_duckdb_client(), misses, request.feature_version
+        )
+        for eid, features in on_demand_results.items():
+            if features is not None:
+                online_results[eid] = features
+                on_demand_count += 1
 
     latency_ms = round((time.perf_counter() - t0) * 1000, 2)
     _record_latency("batch", latency_ms, hit=hits > 0)
@@ -277,13 +327,27 @@ async def skew_report(feature_version: str = Query(default="v1")):
     """
     Compute training vs serving feature distribution skew.
     Uses KS test per feature to detect statistical drift.
+
+    Cached in-process for _SKEW_TTL seconds per feature_version — this is a
+    public, unauthenticated GET, and each computation writes a serving
+    snapshot to MotherDuck. Without the cache, a scripted loop or a dashboard
+    on a short timer can burn through the entire MotherDuck free-tier
+    compute quota for the month.
     """
+    now = time.time()
+    hit = _skew_cache.get(feature_version)
+    if hit and now - hit[0] < _SKEW_TTL:
+        return hit[1]
+
     try:
-        report = compute_skew_report(feature_version=feature_version)
-        return {"feature_version": feature_version, "report": report}
+        report = await run_in_threadpool(compute_skew_report, feature_version=feature_version)
     except Exception as exc:
         log.error("skew_report_failed", error=str(exc))
         raise HTTPException(status_code=500, detail=str(exc))
+
+    payload = {"feature_version": feature_version, "report": report}
+    _skew_cache[feature_version] = (now, payload)
+    return payload
 
 
 @app.get("/lineage/{feature_name}")
@@ -295,7 +359,9 @@ async def feature_lineage(
     downstream model consumers.
     """
     try:
-        graph = get_lineage_for_feature(feature_name, feature_version=feature_version)
+        graph = await run_in_threadpool(
+            get_lineage_for_feature, feature_name, feature_version=feature_version
+        )
         return graph
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
@@ -304,14 +370,15 @@ async def feature_lineage(
 @app.get("/registry")
 async def registry(feature_version: str = Query(default="v1")):
     """List all active features from the registry."""
-    return get_all_features(version=feature_version)
+    return await run_in_threadpool(get_all_features, version=feature_version)
 
 
 @app.get("/materialization-log")
-async def materialization_log(limit: int = Query(default=50)):
+async def materialization_log(limit: int = Query(default=50, ge=1, le=1000)):
     """Return the most recent materialization run records."""
     client = get_duckdb_client()
-    rows = client.execute(
+    rows = await run_in_threadpool(
+        client.execute,
         """
         SELECT run_id, feature_version, entity_type, entities_processed,
                entities_failed, duration_ms, status, error_message,
@@ -364,7 +431,7 @@ async def serving_metrics():
         "on_demand": percentiles(on_demand),
         "batch": percentiles(batch),
         "cache_hit_rate": round(hit_rate, 3),
-        "online_store_entities": get_online_store_size(),
+        "online_store_entities": await run_in_threadpool(get_online_store_size),
     }
 
 

@@ -7,10 +7,11 @@ Runs without ClickHouse — tests the statistical comparison directly.
 
 import sys
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import duckdb
+import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -115,3 +116,52 @@ def test_empty_window_excludes_feature_instead_of_fabricating(monkeypatch):
         "SELECT count(*) FROM skew_snapshots WHERE context = 'serving'"
     )
     assert rows[0][0] == 0
+
+
+def test_compute_skew_report_end_to_end_with_seeded_snapshots(monkeypatch):
+    """Seed a training snapshot directly, and seed feature_history so the
+    fresh serving-snapshot capture has real rows to aggregate. End-to-end:
+    capture -> load training -> KS test -> report."""
+    client = _DuckClient(duckdb.connect(":memory:"))
+    apply_schema(client)
+    monkeypatch.setattr(detector, "get_duckdb_client", lambda: client)
+
+    client.execute(
+        """
+        INSERT INTO skew_snapshots
+        (snapshot_id, feature_name, feature_version, context,
+         mean, std, p25, p50, p75, p95, null_rate, sample_count, captured_at)
+        VALUES
+        ($sid, 'txn_count_7d', 'v1', 'training', 10, 2, 8, 10, 12, 14, 0.0, 500, $now)
+        """,
+        {"sid": str(uuid.uuid4())[:12], "now": datetime(2024, 1, 1)},
+    )
+
+    now = datetime.utcnow()
+    cols = [
+        "entity_id", "entity_type", "feature_version", "event_time",
+        "txn_count_7d", "txn_count_30d", "txn_count_90d",
+        "total_spend_7d", "total_spend_30d", "total_spend_90d",
+        "avg_txn_amount_30d", "failed_txn_rate_30d", "days_since_last_txn",
+        "open_tickets", "ticket_rate_30d", "account_age_days", "plan_encoded",
+        "computed_at",
+    ]
+    rows = [
+        (
+            i, "user", "v1", now - timedelta(hours=1),
+            10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 0.0, 1.0, 0.0, 0.0, 10.0, 2.0,
+            now,
+        )
+        for i in range(1, 6)
+    ]
+    client.register("h", pd.DataFrame(rows, columns=cols))
+    client.execute("INSERT INTO feature_history SELECT * FROM h")
+
+    report = compute_skew_report(feature_version="v1")
+
+    assert len(report) == 1
+    result = report[0]
+    assert result["feature_name"] == "txn_count_7d"
+    assert result["serving_mean"] == 10.0
+    assert result["training_mean"] == 10.0
+    assert result["serving_sample_count"] == 5

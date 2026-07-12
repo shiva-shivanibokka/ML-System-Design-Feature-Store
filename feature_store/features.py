@@ -169,3 +169,32 @@ def compute_on_demand(
     # unpacking lets a later key win) without needing to touch validator.py.
     raw["entity_id"] = entity_id
     return validate_single_entity(raw)
+
+
+def compute_on_demand_batch(
+    client, entity_ids: list[int], feature_version: str = "v1"
+) -> dict[int, dict | None]:
+    """Batched on-demand fallback for /features/batch misses.
+
+    Same SQL/params as compute_on_demand, but one query for the whole miss
+    list via an IN (SELECT UNNEST(...)) filter instead of one MotherDuck
+    round-trip per entity — a cold-cache 500-entity batch used to hold the
+    DuckDB lock and burn compute 500x. Validation still runs per-entity so a
+    bad row for one entity doesn't fail the whole batch.
+    """
+    if not entity_ids:
+        return {}
+    params = _windows(datetime.utcnow(), feature_version)
+    params["uids"] = entity_ids
+    rows = client.execute(
+        feature_select_sql(entity_filter="AND u.user_id IN (SELECT UNNEST($uids))"),
+        params,
+    )
+    results: dict[int, dict | None] = {eid: None for eid in entity_ids}
+    for row in rows:
+        entity_id = int(row[0])
+        values = row[4:]
+        raw = dict(zip(FEATURE_COLS, (float(v) for v in values)))
+        raw["entity_id"] = entity_id
+        results[entity_id] = validate_single_entity(raw)
+    return results
