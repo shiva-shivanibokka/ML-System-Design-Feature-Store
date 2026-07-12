@@ -3,7 +3,9 @@
 # =============================================================================
 # Every feature consumed by training or serving must be defined here.
 # Changes to transformations require a version bump (v1 → v2).
-# The registry loader reads this file on startup and syncs to ClickHouse.
+# The registry loader reads this file and syncs it to the DuckDB feature_registry.
+# NOTE: the `transformation` strings are descriptive metadata shown in the UI —
+# the executable definition lives once in feature_store/features.py.
 # =============================================================================
 
 feature_version: "v1"
@@ -17,7 +19,7 @@ features:
     dtype: float32
     description: "Number of transactions in the last 7 days"
     source_table: raw_transactions
-    transformation: "countIf(status = 'success') OVER last_7d"
+    transformation: "count(*) FILTER (WHERE status='success' AND event_time >= snapshot-7d)"
     owner: ml-platform
     tags: [behavioral, transaction, short-term]
 
@@ -25,7 +27,7 @@ features:
     dtype: float32
     description: "Number of transactions in the last 30 days"
     source_table: raw_transactions
-    transformation: "countIf(status = 'success') OVER last_30d"
+    transformation: "count(*) FILTER (WHERE status='success' AND event_time >= snapshot-30d)"
     owner: ml-platform
     tags: [behavioral, transaction, medium-term]
 
@@ -33,7 +35,7 @@ features:
     dtype: float32
     description: "Number of transactions in the last 90 days"
     source_table: raw_transactions
-    transformation: "countIf(status = 'success') OVER last_90d"
+    transformation: "count(*) FILTER (WHERE status='success' AND event_time >= snapshot-90d)"
     owner: ml-platform
     tags: [behavioral, transaction, long-term]
 
@@ -41,7 +43,7 @@ features:
     dtype: float32
     description: "Total spend (successful transactions) in the last 7 days"
     source_table: raw_transactions
-    transformation: "sumIf(amount, status = 'success') OVER last_7d"
+    transformation: "sum(amount) FILTER (WHERE status='success' AND event_time >= snapshot-7d)"
     owner: ml-platform
     tags: [behavioral, spend, short-term]
 
@@ -49,7 +51,7 @@ features:
     dtype: float32
     description: "Total spend in the last 30 days"
     source_table: raw_transactions
-    transformation: "sumIf(amount, status = 'success') OVER last_30d"
+    transformation: "sum(amount) FILTER (WHERE status='success' AND event_time >= snapshot-30d)"
     owner: ml-platform
     tags: [behavioral, spend, medium-term]
 
@@ -57,7 +59,7 @@ features:
     dtype: float32
     description: "Total spend in the last 90 days"
     source_table: raw_transactions
-    transformation: "sumIf(amount, status = 'success') OVER last_90d"
+    transformation: "sum(amount) FILTER (WHERE status='success' AND event_time >= snapshot-90d)"
     owner: ml-platform
     tags: [behavioral, spend, long-term]
 
@@ -65,7 +67,7 @@ features:
     dtype: float32
     description: "Average transaction amount over the last 30 days"
     source_table: raw_transactions
-    transformation: "avgIf(amount, status = 'success') OVER last_30d"
+    transformation: "avg(amount) FILTER (WHERE status='success' AND event_time >= snapshot-30d)"
     owner: ml-platform
     tags: [behavioral, spend, medium-term]
 
@@ -73,7 +75,7 @@ features:
     dtype: float32
     description: "Rate of failed transactions in the last 30 days (0-1)"
     source_table: raw_transactions
-    transformation: "countIf(status='failed') / nullIf(count(), 0) OVER last_30d"
+    transformation: "count(*) FILTER (WHERE status='failed') / greatest(count(*) FILTER (WHERE window=30d),1)"
     owner: ml-platform
     tags: [behavioral, transaction, risk]
 
@@ -81,7 +83,7 @@ features:
     dtype: float32
     description: "Days elapsed since the user's most recent transaction"
     source_table: raw_transactions
-    transformation: "dateDiff('day', max(event_time), now())"
+    transformation: "date_diff('day', max(event_time) FILTER (WHERE status='success'), snapshot)"
     owner: ml-platform
     tags: [behavioral, recency]
 
@@ -91,7 +93,7 @@ features:
     dtype: float32
     description: "Count of currently open (unresolved) support tickets"
     source_table: raw_support_tickets
-    transformation: "countIf(resolved = 0)"
+    transformation: "count(*) FILTER (WHERE resolved = 0 AND event_time < snapshot)"
     owner: ml-platform
     tags: [support, risk]
 
@@ -99,7 +101,7 @@ features:
     dtype: float32
     description: "Number of support tickets opened in the last 30 days"
     source_table: raw_support_tickets
-    transformation: "countIf(event_time >= now() - INTERVAL 30 DAY)"
+    transformation: "count(*) FILTER (WHERE event_time >= snapshot-30d)"
     owner: ml-platform
     tags: [support, medium-term]
 
@@ -109,7 +111,7 @@ features:
     dtype: float32
     description: "Days since account signup"
     source_table: raw_users
-    transformation: "dateDiff('day', signup_date, today())"
+    transformation: "date_diff('day', signup_date, snapshot)"
     owner: ml-platform
     tags: [profile, static]
 
@@ -117,7 +119,7 @@ features:
     dtype: float32
     description: "Plan type as ordinal: free=0, basic=1, pro=2, enterprise=3"
     source_table: raw_users
-    transformation: "multiIf(plan_type='free',0, plan_type='basic',1, plan_type='pro',2, 3)"
+    transformation: "CASE plan_type WHEN 'free' THEN 0 WHEN 'basic' THEN 1 WHEN 'pro' THEN 2 ELSE 3 END"
     owner: ml-platform
     tags: [profile, static]
 

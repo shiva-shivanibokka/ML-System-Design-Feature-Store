@@ -152,6 +152,15 @@ If you want a local Redis instead of pointing `REDIS_URL` at Upstash: `docker ru
 3. In the Space's **Settings → Variables and secrets**, set: `MOTHERDUCK_TOKEN`, `REDIS_URL`, `ALLOWED_ORIGINS`, `DUCKDB_DATABASE`.
 4. Optionally copy `README_HF.md` over the Space's `README.md` for the HF frontmatter (title/emoji/colors).
 
+### Seed the stores (one-time, required)
+A fresh deploy has empty stores, so the API returns 404s / empty tables until you seed once. Point your local env at the cloud services (set `MOTHERDUCK_TOKEN`, `DUCKDB_DATABASE`, `REDIS_URL` in `.env`) and run:
+```bash
+python data/generate.py                    # raw tables → MotherDuck
+python materialization/backfill.py --days 90   # feature_history snapshots
+python materialization/materialize.py      # latest features → Upstash Redis
+```
+After this the scheduled `materialize.yml` keeps the online store fresh every 6h. Run `train.yml` (or `python training/train.py` with the DagsHub env vars) once to populate the model registry and the training-time skew baseline.
+
 ### Frontend — Vercel
 1. Import the repo into Vercel.
 2. Set **Root Directory = `frontend`**.

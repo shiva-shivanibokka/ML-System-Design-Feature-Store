@@ -19,7 +19,6 @@ Endpoints:
   GET  /health
   GET  /features/{entity_id}                — single entity, dual-path
   POST /features/batch                      — bulk lookup (up to 500)
-  POST /features/training-dataset           — PIT-correct training export
   GET  /skew-report                         — KS test per feature
   GET  /lineage/{feature_name}              — feature provenance DAG
   GET  /registry                            — all registered features
@@ -151,12 +150,6 @@ class BatchFeatureResponse(BaseModel):
     misses: int
     on_demand_computed: int
     latency_ms: float
-
-
-class TrainingDatasetRequest(BaseModel):
-    entity_ids: list[int]
-    label_timestamp: datetime
-    feature_version: str = "v1"
 
 
 class SkewReport(BaseModel):
