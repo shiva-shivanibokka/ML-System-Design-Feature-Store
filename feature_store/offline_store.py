@@ -11,6 +11,7 @@ the temporal join feature stores (Feast, Tecton, Hopsworks) are built around.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from uuid import uuid4
 
 import pandas as pd
 import structlog
@@ -64,23 +65,30 @@ def get_training_dataset(
         return pd.DataFrame()
     client = get_duckdb_client()
     labels = pd.DataFrame(label_timestamps, columns=["entity_id", "label_time"])
-    client.register("labels", labels)
-    # feature_version is pre-filtered in a CTE, NOT in a trailing WHERE on the
-    # joined result: the ASOF JOIN below is a LEFT JOIN, so a WHERE on fh.* would
-    # silently drop the unmatched (no-prior-snapshot) label rows it's meant to keep.
-    rows = client.execute(
-        f"""
-        WITH fh AS (
-            SELECT * FROM feature_history WHERE feature_version = $version
+    # Unique per-call view name: register()+execute() are two separate lock
+    # acquisitions, so a fixed name would let concurrent callers clobber each
+    # other's labels between the two calls.
+    view = f"labels_{uuid4().hex}"
+    client.register(view, labels)
+    try:
+        # feature_version is pre-filtered in a CTE, NOT in a trailing WHERE on the
+        # joined result: the ASOF JOIN below is a LEFT JOIN, so a WHERE on fh.* would
+        # silently drop the unmatched (no-prior-snapshot) label rows it's meant to keep.
+        rows = client.execute(
+            f"""
+            WITH fh AS (
+                SELECT * FROM feature_history WHERE feature_version = $version
+            )
+            SELECT l.entity_id, l.label_time, {", ".join(f"fh.{c}" for c in FEATURE_COLS)}
+            FROM {view} l
+            ASOF LEFT JOIN fh
+              ON l.entity_id = fh.entity_id
+             AND l.label_time >= fh.event_time
+            """,
+            {"version": feature_version},
         )
-        SELECT l.entity_id, l.label_time, {", ".join(f"fh.{c}" for c in FEATURE_COLS)}
-        FROM labels l
-        ASOF LEFT JOIN fh
-          ON l.entity_id = fh.entity_id
-         AND l.label_time >= fh.event_time
-        """,
-        {"version": feature_version},
-    )
+    finally:
+        client.unregister(view)
     return pd.DataFrame(rows, columns=["entity_id", "label_timestamp"] + FEATURE_COLS)
 
 

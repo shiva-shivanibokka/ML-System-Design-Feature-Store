@@ -56,6 +56,10 @@ class _DuckClient:
         with self._lock:
             self._conn.register(name, df)
 
+    def unregister(self, name: str) -> None:
+        with self._lock:
+            self._conn.unregister(name)
+
     @property
     def raw(self) -> duckdb.DuckDBPyConnection:
         return self._conn

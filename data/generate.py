@@ -18,6 +18,7 @@ import os
 import random
 import sys
 from datetime import datetime, timedelta
+from uuid import uuid4
 
 import numpy as np
 import pandas as pd
@@ -160,33 +161,45 @@ def generate_support_tickets(users: list[dict], days: int) -> list[dict]:
 
 def load_users(client, users: list[dict]) -> None:
     log.info("loading_users_to_duckdb", count=len(users))
-    client.register("u_df", pd.DataFrame(users))
-    client.execute(
-        "INSERT INTO raw_users (user_id, signup_date, country, plan_type, age_bucket) "
-        "SELECT user_id, signup_date, country, plan_type, age_bucket FROM u_df"
-    )
+    view = f"u_df_{uuid4().hex}"
+    client.register(view, pd.DataFrame(users))
+    try:
+        client.execute(
+            "INSERT INTO raw_users (user_id, signup_date, country, plan_type, age_bucket) "
+            f"SELECT user_id, signup_date, country, plan_type, age_bucket FROM {view}"
+        )
+    finally:
+        client.unregister(view)
     log.info("users_loaded")
 
 
 def load_transactions(client, txns: list[dict]) -> None:
     log.info("loading_transactions_to_duckdb", count=len(txns))
-    client.register("t_df", pd.DataFrame(txns))
-    client.execute(
-        "INSERT INTO raw_transactions "
-        "(transaction_id, user_id, amount, category, status, event_time) "
-        "SELECT transaction_id, user_id, amount, category, status, event_time FROM t_df"
-    )
+    view = f"t_df_{uuid4().hex}"
+    client.register(view, pd.DataFrame(txns))
+    try:
+        client.execute(
+            "INSERT INTO raw_transactions "
+            "(transaction_id, user_id, amount, category, status, event_time) "
+            f"SELECT transaction_id, user_id, amount, category, status, event_time FROM {view}"
+        )
+    finally:
+        client.unregister(view)
     log.info("transactions_loaded")
 
 
 def load_tickets(client, tickets: list[dict]) -> None:
     log.info("loading_tickets_to_duckdb", count=len(tickets))
-    client.register("s_df", pd.DataFrame(tickets))
-    client.execute(
-        "INSERT INTO raw_support_tickets "
-        "(ticket_id, user_id, severity, resolved, event_time) "
-        "SELECT ticket_id, user_id, severity, resolved, event_time FROM s_df"
-    )
+    view = f"s_df_{uuid4().hex}"
+    client.register(view, pd.DataFrame(tickets))
+    try:
+        client.execute(
+            "INSERT INTO raw_support_tickets "
+            "(ticket_id, user_id, severity, resolved, event_time) "
+            f"SELECT ticket_id, user_id, severity, resolved, event_time FROM {view}"
+        )
+    finally:
+        client.unregister(view)
     log.info("tickets_loaded")
 
 
