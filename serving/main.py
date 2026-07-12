@@ -33,7 +33,7 @@ import os
 import time
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional
 
 import structlog
@@ -47,17 +47,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from feature_store.connections import get_clickhouse_client, get_redis_client
-from feature_store.offline_store import FEATURE_COLS, get_feature_stats
+from feature_store.connections import get_duckdb_client, get_redis_client
+from feature_store.features import compute_on_demand
 from feature_store.online_store import (
     get_entities_batch,
     get_entity,
     get_online_store_size,
 )
 from feature_store.registry import get_all_features, sync_registry
-from feature_store.validator import validate_single_entity
 from skew.detector import compute_skew_report
-from lineage.graph import get_lineage_for_feature
+from lineage.graph import get_full_lineage_graph, get_lineage_for_feature
 
 log = structlog.get_logger()
 
@@ -119,9 +118,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+_origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",")]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -172,74 +172,23 @@ class SkewReport(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-FEATURE_VERSION = os.getenv("FEATURE_VERSION", "v1")
-
-
-def _on_demand_features(
-    entity_id: int, version: str = FEATURE_VERSION
-) -> dict[str, float] | None:
-    """
-    On-demand path: compute features directly from ClickHouse raw tables.
-    This is the cold-start fallback for entities not in the online store.
-    """
-    client = get_clickhouse_client()
-    now = datetime.utcnow()
-
-    rows = client.execute(
-        f"""
-        SELECT
-            {", ".join(FEATURE_COLS)}
-        FROM
-        (
-            SELECT
-                countIf(t.status = 'success' AND t.event_time >= %(t7)s)   AS txn_count_7d,
-                countIf(t.status = 'success' AND t.event_time >= %(t30)s)  AS txn_count_30d,
-                countIf(t.status = 'success' AND t.event_time >= %(t90)s)  AS txn_count_90d,
-                sumIf(t.amount, t.status='success' AND t.event_time>=%(t7)s)  AS total_spend_7d,
-                sumIf(t.amount, t.status='success' AND t.event_time>=%(t30)s) AS total_spend_30d,
-                sumIf(t.amount, t.status='success' AND t.event_time>=%(t90)s) AS total_spend_90d,
-                avgIf(t.amount, t.status='success' AND t.event_time>=%(t30)s) AS avg_txn_amount_30d,
-                countIf(t.status='failed' AND t.event_time>=%(t30)s)
-                    / greatest(countIf(t.event_time>=%(t30)s), 1)           AS failed_txn_rate_30d,
-                toFloat32(dateDiff('day', maxIf(t.event_time, t.status='success'), now())) AS days_since_last_txn,
-                countIf(sk.resolved=0)                                       AS open_tickets,
-                countIf(sk.event_time>=%(t30)s)                             AS ticket_rate_30d,
-                toFloat32(dateDiff('day', u.signup_date, today()))          AS account_age_days,
-                multiIf(u.plan_type='free',0,u.plan_type='basic',1,
-                        u.plan_type='pro',2,3)                              AS plan_encoded
-            FROM raw_users u
-            LEFT JOIN raw_transactions t ON t.user_id = u.user_id
-            LEFT JOIN raw_support_tickets sk ON sk.user_id = u.user_id
-            WHERE u.user_id = %(uid)s
-            GROUP BY u.user_id, u.signup_date, u.plan_type
-        )
-        """,
-        {
-            "uid": entity_id,
-            "t7": now - timedelta(days=7),
-            "t30": now - timedelta(days=30),
-            "t90": now - timedelta(days=90),
-        },
-    )
-
-    if not rows:
-        return None
-
-    raw = dict(zip(FEATURE_COLS, rows[0]))
-    return validate_single_entity(raw)
-
-
-# ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
 
 
 @app.get("/health")
 async def health():
+    try:
+        get_duckdb_client().execute("SELECT 1")
+        get_redis_client().ping()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"dependency down: {exc}")
     return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
+
+
+@app.get("/lineage")
+async def full_lineage(feature_version: str = Query(default="v1")):
+    return get_full_lineage_graph(feature_version=feature_version)
 
 
 @app.get("/features/{entity_id}", response_model=FeatureResponse)
@@ -264,7 +213,7 @@ async def get_features(
     if features is None:
         # ── On-demand path ──────────────────────────────────────────────────
         log.info("on_demand_fallback", entity_id=entity_id)
-        features = _on_demand_features(entity_id, version=feature_version)
+        features = compute_on_demand(get_duckdb_client(), entity_id, feature_version)
         source = "on_demand"
 
         if features is None:
@@ -306,7 +255,7 @@ async def get_features_batch(request: BatchFeatureRequest):
     # ── On-demand fallback for misses ──────────────────────────────────────
     on_demand_count = 0
     for eid in misses:
-        features = _on_demand_features(eid, version=request.feature_version)
+        features = compute_on_demand(get_duckdb_client(), eid, request.feature_version)
         if features is not None:
             online_results[eid] = features
             on_demand_count += 1
@@ -370,7 +319,7 @@ async def registry(feature_version: str = Query(default="v1")):
 @app.get("/materialization-log")
 async def materialization_log(limit: int = Query(default=50)):
     """Return the most recent materialization run records."""
-    client = get_clickhouse_client()
+    client = get_duckdb_client()
     rows = client.execute(
         """
         SELECT run_id, feature_version, entity_type, entities_processed,
@@ -378,7 +327,7 @@ async def materialization_log(limit: int = Query(default=50)):
                started_at, completed_at
         FROM materialization_log
         ORDER BY completed_at DESC
-        LIMIT %(limit)s
+        LIMIT $limit
         """,
         {"limit": limit},
     )
@@ -437,7 +386,7 @@ if __name__ == "__main__":
     uvicorn.run(
         "serving.main:app",
         host="0.0.0.0",
-        port=8000,
+        port=int(os.getenv("PORT", "7860")),
         reload=False,
         log_level="info",
     )
