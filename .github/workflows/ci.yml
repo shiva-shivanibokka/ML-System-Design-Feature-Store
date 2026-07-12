@@ -24,4 +24,4 @@ jobs:
     needs: lint-and-test
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -f Dockerfile.api -t feature-store-api:ci .
+      - run: docker build -t feature-store-api:ci .
