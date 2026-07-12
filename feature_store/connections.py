@@ -34,10 +34,15 @@ class _DuckClient:
         self._conn = conn
 
     def execute(self, sql: str, params: dict | list | None = None) -> list[tuple]:
-        cur = self._conn.cursor()
-        cur.execute(sql, params if params is not None else {})
+        # Run directly on the singleton connection (not a fresh .cursor() per
+        # call): DuckDB's register() binds a DataFrame to the specific
+        # connection/cursor object it was called on, so a new cursor per
+        # execute() can never see anything registered via .register() below.
+        # DuckDB serializes concurrent access to a single connection itself,
+        # so this is still safe under FastAPI's single-process usage.
+        self._conn.execute(sql, params if params is not None else {})
         try:
-            return cur.fetchall()
+            return self._conn.fetchall()
         except duckdb.InvalidInputException:
             return []  # statements without a result set (INSERT/DDL)
 
