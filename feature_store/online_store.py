@@ -25,7 +25,7 @@ from typing import Optional
 import structlog
 
 from feature_store.connections import get_redis_client
-from feature_store.offline_store import FEATURE_COLS
+from feature_store.features import FEATURE_COLS
 
 log = structlog.get_logger()
 
