@@ -68,3 +68,12 @@ class TestKSTest:
         stats = self._make_stats(0.0, 0.0)
         result = _run_ks_test(stats, stats, "constant_feature")
         assert isinstance(result["ks_statistic"], float)
+
+    def test_result_is_json_serializable(self):
+        """flagged must be a builtin bool, not numpy.bool_ — FastAPI's JSON
+        encoder cannot serialize numpy scalars, which 500s /skew-report."""
+        import json
+
+        result = _run_ks_test(self._make_stats(5.0, 1.0), self._make_stats(50.0, 1.0), "f")
+        assert type(result["flagged"]) is bool
+        json.dumps(result)  # raises if any numpy scalar leaked in

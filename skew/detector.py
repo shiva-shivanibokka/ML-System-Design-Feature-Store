@@ -138,7 +138,9 @@ def _run_ks_test(
     ks_stat, ks_pvalue = stats.ks_2samp(tr_samples, sv_samples)
 
     mean_shift = abs(tr["mean"] - sv["mean"]) / max(tr["std"], 1e-6)
-    flagged = ks_pvalue < KS_THRESHOLD
+    # bool(...) unwraps numpy.bool_ — FastAPI's JSON encoder can't serialize the
+    # numpy scalar that scipy's comparison returns, which 500s /skew-report.
+    flagged = bool(ks_pvalue < KS_THRESHOLD)
 
     return {
         "feature_name": feature_name,
