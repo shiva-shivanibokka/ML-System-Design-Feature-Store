@@ -41,7 +41,7 @@ export default function StatusPill() {
 
   const label =
     status === "ok"
-      ? "live · MotherDuck + Valkey · Cloud Run"
+      ? "live · DuckDB + Valkey · Cloud Run"
       : status === "down"
         ? "waking up · Cloud Run cold start"
         : "checking · Cloud Run";

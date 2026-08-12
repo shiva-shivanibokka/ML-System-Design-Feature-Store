@@ -4,6 +4,12 @@ node_modules
 tests
 docs
 *.duckdb
+# ...except the offline store, which the image now carries instead of calling
+# MotherDuck. Two ignore files have to agree for this to work: .gcloudignore
+# controls what gcloud uploads as the build context, .dockerignore controls what
+# the daemon can COPY out of it. Negating only the first fails at the COPY step
+# with "file not found in build context or excluded by .dockerignore".
+!feature_store.duckdb
 mlruns
 .venv
 __pycache__

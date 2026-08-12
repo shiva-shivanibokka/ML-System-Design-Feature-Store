@@ -25,7 +25,7 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "Feature Store — ML Feature Platform",
   description:
-    "A production-shaped ML feature store: a MotherDuck (DuckDB) offline store with point-in-time ASOF joins, an Aiven Valkey online store, a FastAPI backend on Google Cloud Run, and continuous training/serving skew detection.",
+    "A production-shaped ML feature store: a DuckDB offline store with point-in-time ASOF joins, an Aiven Valkey online store, a FastAPI backend on Google Cloud Run, and continuous training/serving skew detection.",
 };
 
 export default function RootLayout({

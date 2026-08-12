@@ -137,14 +137,16 @@ export default function AboutTab() {
               drift out of sync.
             </li>
             <li>
-              <strong>Offline store — MotherDuck / DuckDB</strong> — training data is built with
+              <strong>Offline store — DuckDB</strong> — training data is built with
               point-in-time <strong>ASOF joins</strong>, so a training row only ever sees feature
               values as they existed at that row&rsquo;s timestamp. No future data ever leaks
               into a training example.
             </li>
             <li>
               <strong>Online store — Aiven Valkey</strong> — the same feature definitions are
-              materialized here for millisecond-latency lookups at serving time.
+              materialized here so serving is a single hash lookup instead of a query. Measured on
+              this deployment it roughly halves p50, and most of what remains is the round trip
+              between Cloud Run and Valkey, which sit in different clouds.
             </li>
             <li>
               <strong>Backend — FastAPI on Google Cloud Run</strong> — serves the registry,
@@ -166,13 +168,13 @@ export default function AboutTab() {
       <div className="card">
         <div className="card-head">
           <span className="section-label">
-            Why two stores: MotherDuck vs. Valkey
+            Why two stores: DuckDB vs. Valkey
             <Tip text="Why an OLAP warehouse and an in-memory key-value store each do a job the other one is bad at." />
           </span>
         </div>
         <div className="card-body about">
           <p>
-            <strong>MotherDuck (DuckDB)</strong> is a columnar analytical warehouse — excellent at
+            <strong>DuckDB</strong> is a columnar analytical warehouse — excellent at
             scanning millions of historical rows to backfill features or run a point-in-time ASOF
             join, but not built to answer &ldquo;give me this one user&rsquo;s features&rdquo; in
             single-digit milliseconds under load. <strong>Aiven Valkey</strong> (a Redis-compatible
@@ -352,22 +354,34 @@ export default function AboutTab() {
         </div>
         <div className="card-body about">
           <p>
-            The whole system is deployed entirely on free tiers, by design: <strong>MotherDuck</strong>&rsquo;s
-            free tier for the offline warehouse, <strong>Aiven</strong>&rsquo;s free plan for
-            Valkey, <strong>FastAPI</strong> on <strong>Google Cloud Run</strong> (scale-to-zero,
-            pay-per-request — comfortably inside the free tier at this traffic level), this
-            dashboard on <strong>Vercel</strong>&rsquo;s free hobby plan, and{" "}
-            <strong>GitHub Actions</strong>&rsquo; free minutes for scheduled backfill,
-            materialization, and training runs. The point is that a system shaped like a real
-            production feature store — with point-in-time correctness, dual stores, scheduled
-            materialization, and continuous skew monitoring — doesn&rsquo;t require
+            The whole system runs on free infrastructure, by design: the offline store is a{" "}
+            <strong>DuckDB file baked into the container image</strong>, <strong>Aiven</strong>&rsquo;s
+            free plan hosts Valkey, <strong>FastAPI</strong> runs on{" "}
+            <strong>Google Cloud Run</strong> (scale-to-zero, pay-per-request — comfortably inside
+            the free tier at this traffic level), this dashboard is on{" "}
+            <strong>Vercel</strong>&rsquo;s hobby plan, and <strong>GitHub Actions</strong>&rsquo;
+            free minutes run the scheduled materialization and health checks.
+          </p>
+          <p>
+            The offline store started out on a hosted warehouse and that is what taught the
+            lesson: the trial lapsed, and because every read path queries the offline store, one
+            expiry took the whole API down while the process itself stayed healthy and kept
+            serving its own docs. Shipping the warehouse inside the image removed an account, a
+            credential and a network hop at once — for a 2 MB dataset there was never a reason to
+            rent it. The tradeoff is that refreshing the data now means rebuilding the image
+            rather than writing to a live warehouse, which is the right trade at this size and the
+            wrong one at a hundred gigabytes.
+          </p>
+          <p>
+            A system shaped like a real production feature store — point-in-time correctness, dual
+            stores, scheduled materialization, continuous skew monitoring — doesn&rsquo;t require
             production-scale spend to build or to run.
           </p>
           <div className="about-stack">
             {[
               "Python",
               "FastAPI",
-              "MotherDuck / DuckDB",
+              "DuckDB",
               "Aiven Valkey",
               "LightGBM",
               "Pandera",

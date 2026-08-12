@@ -9,7 +9,7 @@ Two serving paths:
     Used for: known entities with history in the online store
 
   ON-DEMAND PATH (cold-start fallback):
-    DuckDB/MotherDuck query → computes features on the fly in ~20ms
+    DuckDB query → computes features on the fly (~99ms p50 on this deployment)
     Used for: new entities not yet materialized, or after cache expiry
 
 Every request logs which path was taken + latency, enabling the
@@ -77,9 +77,11 @@ _latency_log: list[dict] = []
 MAX_LATENCY_LOG = 1000
 
 # ---------------------------------------------------------------------------
-# In-process /skew-report cache — MotherDuck free tier is 10 compute-hrs/month;
-# an unauthenticated GET recomputing + writing a snapshot on every hit can
-# exhaust it. Short TTL, keyed by feature_version.
+# In-process /skew-report cache. The report runs a KS test over feature_history
+# and writes a serving snapshot, so this unauthenticated GET is the most
+# expensive endpoint here by a wide margin — a dashboard on a short timer or a
+# scripted loop would recompute and re-insert on every hit. Short TTL, keyed by
+# feature_version.
 # ---------------------------------------------------------------------------
 _skew_cache: dict[str, tuple[float, dict]] = {}
 _SKEW_TTL = 300  # seconds
@@ -117,8 +119,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="ML Feature Store — Feature Server",
     description=(
-        "Dual-path feature server: Redis online store (<2ms) with "
-        "DuckDB/MotherDuck on-demand fallback (~20ms). "
+        "Dual-path feature server: Valkey online store with a DuckDB on-demand "
+        "fallback. Measured on this deployment, p50 is ~40ms served from the online "
+        "store against ~99ms on the fallback. "
         "Prevents training-serving skew via centralized feature computation."
     ),
     version="1.0.0",
@@ -143,7 +146,7 @@ class FeatureResponse(BaseModel):
     entity_id: int
     features: dict[str, float]
     source: str = Field(
-        description="'online_store' (Redis) or 'on_demand' (DuckDB/MotherDuck)"
+        description="'online_store' (Valkey) or 'on_demand' (DuckDB)"
     )
     latency_ms: float
     feature_version: str
@@ -236,7 +239,7 @@ async def get_features(
     Dual-path feature retrieval for a single entity.
 
     1. Try Redis (batch path) — returns in <2ms if entity is materialized
-    2. Fall back to DuckDB/MotherDuck (on-demand path) — ~20ms, for cold entities
+    2. Fall back to DuckDB (on-demand path) — ~99ms p50 here, for cold entities
     3. Validate features before returning
     """
     t0 = time.perf_counter()
@@ -281,7 +284,7 @@ async def get_features(
 async def get_features_batch(request: BatchFeatureRequest):
     """
     Bulk feature retrieval for up to 500 entities.
-    Uses Redis pipeline for batch hits, falls back to DuckDB/MotherDuck for misses.
+    Uses Redis pipeline for batch hits, falls back to DuckDB for misses.
     """
     t0 = time.perf_counter()
 
@@ -291,7 +294,7 @@ async def get_features_batch(request: BatchFeatureRequest):
     misses = [eid for eid, v in online_results.items() if v is None]
 
     # ── On-demand fallback for misses — ONE batched query instead of one
-    # MotherDuck round-trip per miss (holding the DuckDB lock for the whole
+    # DuckDB round-trip per miss (holding the DuckDB lock for the whole
     # request otherwise). Validation still happens per-entity.
     on_demand_count = 0
     if misses:
@@ -334,10 +337,10 @@ async def skew_report(feature_version: str = Query(default="v1")):
     Uses KS test per feature to detect statistical drift.
 
     Cached in-process for _SKEW_TTL seconds per feature_version — this is a
-    public, unauthenticated GET, and each computation writes a serving
-    snapshot to MotherDuck. Without the cache, a scripted loop or a dashboard
-    on a short timer can burn through the entire MotherDuck free-tier
-    compute quota for the month.
+    public, unauthenticated GET that runs a KS test across every feature and
+    writes a serving snapshot, all while holding the single DuckDB connection.
+    Without the cache, a scripted loop or a dashboard on a short timer would
+    serialize the whole service behind repeated recomputation.
     """
     now = time.time()
     hit = _skew_cache.get(feature_version)

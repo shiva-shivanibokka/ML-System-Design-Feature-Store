@@ -39,10 +39,11 @@ export default function Home() {
       <header className="hero">
         <h1>Feature Store</h1>
         <p>
-          A point-in-time correct feature platform: <strong>MotherDuck (DuckDB)</strong> computes and
-          backfills every feature offline, <strong>Aiven Valkey</strong> serves it online in
-          milliseconds, and one SQL module — <span className="mono">feature_store/features.py</span> —
-          defines each feature exactly once, so training and serving can never drift apart.
+          A point-in-time correct feature platform: <strong>DuckDB</strong> computes and
+          backfills every feature offline, <strong>Aiven Valkey</strong> serves it online at
+          roughly half the latency, and one SQL module —{" "}
+          <span className="mono">feature_store/features.py</span> — defines each feature exactly
+          once, so training and serving can never drift apart.
         </p>
         <div className="live-row">
           <StatusPill />

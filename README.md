@@ -26,7 +26,7 @@ flowchart TB
     UI["Next.js Dashboard<br/>(Vercel)"]
     FS["FastAPI Feature Server<br/>(Google Cloud Run, $PORT/8080)<br/>dual-path serving"]
     FEAT["feature_store/features.py<br/><b>single feature-computation SQL</b>"]
-    MD[("MotherDuck / DuckDB<br/>OFFLINE store<br/>ASOF JOIN = point-in-time correctness")]
+    MD[("DuckDB file in image<br/>OFFLINE store<br/>ASOF JOIN = point-in-time correctness")]
     VK[("Aiven Valkey<br/>ONLINE store<br/>hash-per-entity, fast lookups")]
     MAT["GitHub Actions<br/>materialize.yml (cron 6h)<br/>+ Cloud Run keep-warm"]
     TR["GitHub Actions<br/>train.yml<br/>LightGBM + MLflow"]
@@ -41,7 +41,7 @@ flowchart TB
     FEAT -. "reused by" .- FS
 ```
 
-**Why it's shaped this way:** the single biggest correctness win is that feature computation lives in **exactly one place** — `feature_store/features.py`. Offline backfill, the on-demand serving fallback, and the training point-in-time join all call the same SQL, so there is no second implementation to drift out of sync. Two stores exist because they solve opposite problems: **MotherDuck (DuckDB)** is a columnar warehouse great at scanning history for backfills and ASOF joins but poor at single-entity point lookups; **Aiven Valkey** (Redis-compatible) is the reverse. Each store does the one job it's actually good at.
+**Why it's shaped this way:** the single biggest correctness win is that feature computation lives in **exactly one place** — `feature_store/features.py`. Offline backfill, the on-demand serving fallback, and the training point-in-time join all call the same SQL, so there is no second implementation to drift out of sync. Two stores exist because they solve opposite problems: **DuckDB** is a columnar warehouse great at scanning history for backfills and ASOF joins but poor at single-entity point lookups; **Aiven Valkey** (Redis-compatible) is the reverse. Each store does the one job it's actually good at.
 
 ---
 
@@ -62,7 +62,7 @@ flowchart TB
 
 | Component | Service | Free-tier limit |
 |---|---|---|
-| Offline store | **MotherDuck** (hosted DuckDB) | 10 GB storage / 10 compute-hours per month |
+| Offline store | **DuckDB** file baked into the container image | No service, no account — 2 MB, versioned in this repo |
 | Online store | **Aiven Valkey** (Redis-compatible) | 1 GB |
 | Backend | **Google Cloud Run** | 2M requests / month, scale-to-zero |
 | Frontend | **Vercel** (Hobby) | Unlimited personal projects |
@@ -78,7 +78,7 @@ No Supabase, Fly.io, Render, or paid databases — every service above has a per
 - **Production ML deployment / MLOps** — model serving decoupled from training, on managed cloud infra
 - **System design & architecture** — documented dual-store and single-source-of-computation trade-offs
 - **Data engineering / ETL pipeline design** — raw events → validated features → offline + online stores
-- **Cloud deployment (Google Cloud Run + Vercel + MotherDuck + Aiven)** — containerized, multi-service, all free-tier
+- **Cloud deployment (Google Cloud Run + Vercel + Aiven)** — containerized, multi-service, all free-tier
 - **RESTful API design** — FastAPI service with typed request/response models and OpenAPI docs
 - **Point-in-time-correct feature engineering** — temporal (`ASOF`) joins to eliminate label leakage
 - **Asynchronous / concurrent systems design** — async endpoints with thread-pool offload and a serialized shared DB connection
@@ -95,7 +95,7 @@ No Supabase, Fly.io, Render, or paid databases — every service above has a per
 
 | Layer | Tool | Why |
 |---|---|---|
-| Offline store | **MotherDuck (DuckDB)** | Free-tier hosted analytical DB with native `ASOF JOIN` |
+| Offline store | **DuckDB** | Embedded analytical DB with native `ASOF JOIN`; ships inside the image |
 | Online store | **Aiven Valkey** | Redis-compatible, URL-configured, hash-per-entity |
 | Backend | **FastAPI** on **Google Cloud Run** | Dual-path serving; container from the root `Dockerfile` |
 | Frontend | **Next.js (App Router) + TypeScript** on **Vercel** | Dashboard: explorer, training pull, skew, materialization |
@@ -114,7 +114,8 @@ All figures below are reproducible from this repo — no invented benchmarks.
 - **Model quality:** the LightGBM churn model reaches **ROC-AUC ≈ 0.98** on point-in-time-correct features (`python training/train.py`).
 - **Leakage, made visible:** the deliberate naive-join demo inflates offline AUC to **~1.0**, then collapses under honest evaluation — a concrete illustration of the failure the whole system prevents.
 - **Test suite:** **45 automated tests pass**, all against in-memory DuckDB + `fakeredis` (no live services), covering the single-source feature SQL, the ASOF PIT join, the dual-path serving endpoints, materialization status logic, and the skew detector.
-- **Live, on free tiers:** frontend (Vercel), backend (Cloud Run), offline store (MotherDuck), and online store (Aiven Valkey) are all deployed and serving real data — the dashboard's Materialization tab shows live per-path serving-latency percentiles measured by the running service.
+- **Live:** frontend (Vercel), backend (Cloud Run), offline store (DuckDB, in the image), and online store (Aiven Valkey) are all deployed and serving real data — the dashboard's Materialization tab shows live per-path serving-latency percentiles measured by the running service.
+- **Dual-path serving, measured on the deployment (Aug 2026):** p50 **≈40 ms** from the online store against **≈99 ms** on the on-demand fallback, over 300 materialized entities. The online store roughly halves p50, and most of what is left is the round trip between Cloud Run (GCP `us-central1`) and Valkey (Aiven, AWS) — the `HGETALL` itself is sub-millisecond. Co-locating the two would put the fast path in single digits; the honest number for *this* deployment is 40 ms.
 
 > This is a portfolio/demo system: the numbers above are correctness and reproducibility figures, not production-scale throughput benchmarks.
 
@@ -179,7 +180,7 @@ gcloud run deploy feature-store-api \
 ### Seed the stores (one-time, required)
 A fresh deploy has empty stores, so the API returns 404s / empty tables until you seed once. Point your local env at the cloud services (set `MOTHERDUCK_TOKEN`, `DUCKDB_DATABASE`, `REDIS_URL` in `.env`) and run:
 ```bash
-python data/generate.py                       # raw tables → MotherDuck
+python data/generate.py                       # raw tables → DuckDB
 python materialization/backfill.py --days 90   # feature_history snapshots
 python materialization/materialize.py          # latest features → Aiven Valkey
 ```
@@ -209,7 +210,7 @@ ML-System-Design-Feature-Store/
 │   └── config.yaml               # App config
 ├── data/generate.py             # Synthetic data → DuckDB raw tables
 ├── feature_store/
-│   ├── connections.py            # DuckDB/MotherDuck + Redis client factories (locked single conn)
+│   ├── connections.py            # DuckDB + Redis client factories (locked single conn)
 │   ├── features.py               # THE single source of feature computation
 │   ├── schema.py                 # Idempotent schema apply
 │   ├── registry.py               # Feature definitions sync (YAML → DuckDB)
@@ -238,8 +239,9 @@ ML-System-Design-Feature-Store/
 
 Deliberately out of scope for a free-tier portfolio/demo system, and honest about it:
 - **No auth** — endpoints are public read-only; the point is the feature-store architecture, not an auth layer. `ALLOWED_ORIGINS` is env-configurable to lock CORS to the frontend domain.
-- **Single uvicorn worker** — intentional (see the `Dockerfile` comment): the stack is sized for free-tier compute-hours, and one shared DuckDB/MotherDuck connection avoids burning the offline store's monthly quota. Blocking DB/Redis calls are offloaded off the event loop so one slow query can't stall the rest.
-- **Ephemeral container** — all durable state lives in MotherDuck / Aiven Valkey; nothing persists on the Cloud Run filesystem.
+- **Single uvicorn worker** — intentional (see the `Dockerfile` comment): the stack is sized for free-tier compute-hours, and one shared DuckDB connection keeps the embedded database single-writer. Blocking DB/Redis calls are offloaded off the event loop so one slow query can't stall the rest.
+- **Read-mostly offline store** — the DuckDB file ships inside the image, so the container filesystem holds it but never persists a change: anything written there (a materialization log row, a retrained skew baseline) is visible to the running revision and discarded on restart. Refreshing the offline data means regenerating the file locally and rebuilding the image. That is the right trade for a 2 MB dataset and the wrong one at a hundred gigabytes. Durable online state lives in Aiven Valkey.
+- **The Materialization tab does not grow by itself** — the scheduled job writes features to Valkey (durable) but its audit-log row lands in the runner's throwaway checkout, so the tab shows the runs baked into the image at build time.
 - **Roadmap:** hosted MLflow (DagsHub) for a persistent model registry; auth + rate limiting before any non-demo exposure; migrating `datetime.utcnow()` to timezone-aware datetimes.
 
 A full self-audit of this codebase (correctness, security, concurrency, performance, tests) lives in [`AUDIT.md`](AUDIT.md), with the corresponding fix plan in [`PLAN.md`](PLAN.md).
