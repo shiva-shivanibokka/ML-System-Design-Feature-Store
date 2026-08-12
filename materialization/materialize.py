@@ -149,15 +149,34 @@ def run_materialization(feature_version: str = "v1") -> dict:
     return summary
 
 
-def main() -> None:
+def main() -> int:
+    """Run materialization and return a shell exit code.
+
+    The summary used to be discarded, so the process exited 0 no matter what.
+    A run that wrote nothing at all — every entity failed, status "failed" —
+    still looked like a clean success to whatever invoked it, which for the
+    six-hourly GitHub Action means a green tick while the online store quietly
+    goes stale. The only visible symptom would be the cache hit rate sliding to
+    zero, and nobody watches that on a demo.
+
+    "partial" is a failure here too. It means some entities did not make it, so
+    serving is answering from stale or missing data for them, and a scheduled
+    job is exactly the place to hear about that early.
+    """
     parser = argparse.ArgumentParser(description="Materialize features to online store")
     parser.add_argument("--feature-version", default="v1")
     args = parser.parse_args()
 
-    run_materialization(feature_version=args.feature_version)
+    summary = run_materialization(feature_version=args.feature_version)
+    if summary["status"] != "success":
+        log.error("materialization_unsuccessful", **summary)
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
+    import sys
+
     import structlog
 
     structlog.configure(
@@ -166,4 +185,4 @@ if __name__ == "__main__":
             structlog.dev.ConsoleRenderer(),
         ]
     )
-    main()
+    sys.exit(main())

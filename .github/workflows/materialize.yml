@@ -5,8 +5,12 @@ on:
   workflow_dispatch:
 
 env:
-  MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
-  DUCKDB_DATABASE: ${{ secrets.DUCKDB_DATABASE }}
+  # The offline store is the feature_store.duckdb committed to this repo and
+  # baked into the container image — the same file the deployed service reads.
+  # MotherDuck is gone: its trial ended, which took every DuckDB-backed endpoint
+  # down with it. MOTHERDUCK_TOKEN must stay unset, because connections.py picks
+  # MotherDuck whenever that variable is non-empty.
+  DUCKDB_PATH: feature_store.duckdb
   REDIS_URL: ${{ secrets.REDIS_URL }}
 
 jobs:
