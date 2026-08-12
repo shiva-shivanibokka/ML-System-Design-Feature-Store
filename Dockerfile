@@ -18,6 +18,19 @@ COPY skew/ ./skew/
 COPY lineage/ ./lineage/
 COPY configs/ ./configs/
 
+# The offline store travels with the image (2 MB).
+#
+# This used to live in MotherDuck, whose trial ended — and because every read
+# endpoint queries DuckDB, the expiry took the entire API down while the process
+# itself stayed healthy and served /docs. A file in the image has no account
+# behind it, no trial to lapse and no network hop to fail.
+#
+# Read-mostly by design: the container filesystem is writable but ephemeral, so
+# a materialization run against this file is visible to the running revision and
+# discarded on restart. Rebuild the image to ship refreshed data.
+COPY feature_store.duckdb ./feature_store.duckdb
+ENV DUCKDB_PATH=/app/feature_store.duckdb
+
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 ENV PORT=8080

@@ -58,3 +58,8 @@ htmlcov/
 # DuckDB local store
 *.duckdb
 *.duckdb.wal
+# The offline store is tracked deliberately: it is the deployed data, baked into
+# the container image now that MotherDuck is gone. 2 MB of synthetic records, no
+# secrets, regenerable with `python data/generate.py`. Untracked, a clean clone
+# would build an image around a database that does not exist.
+!feature_store.duckdb

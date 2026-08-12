@@ -8,6 +8,10 @@ docs
 mlruns
 *.duckdb
 *.duckdb.wal
+# ...except the offline store itself, which the image now carries instead of
+# reaching out to MotherDuck. Without this negation Cloud Build uploads no
+# database and the container starts against an empty file.
+!feature_store.duckdb
 .venv
 __pycache__
 *.pyc

@@ -21,6 +21,7 @@ The frontend Skew tab reads this endpoint and renders histograms + KS results.
 
 from __future__ import annotations
 
+import os
 import uuid
 from datetime import datetime, timedelta
 from typing import Any
@@ -35,7 +36,17 @@ from feature_store.features import FEATURE_COLS
 log = structlog.get_logger()
 
 KS_THRESHOLD = 0.05  # p-value below which we flag skew
-SERVING_SAMPLE_DAYS = 1  # days of recent serving data to sample
+
+# Days of recent serving data to sample. One day is right when materialization
+# runs on a schedule and feature_history is continuously fresh.
+#
+# The deployed demo serves a static offline store baked into the image, so its
+# newest serving rows are as old as the last build. Under a one-day window the
+# sample came back empty and /skew-report returned `{"report": []}` — a blank
+# dashboard tab that looked like a broken endpoint but was an empty query.
+# Env-configurable so the demo can widen the window without changing what the
+# window means for a live deployment.
+SERVING_SAMPLE_DAYS = int(os.getenv("SERVING_SAMPLE_DAYS", "1"))
 
 
 # ---------------------------------------------------------------------------
