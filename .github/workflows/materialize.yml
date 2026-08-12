@@ -28,6 +28,27 @@ jobs:
       - run: pip install -r requirements.api.txt
       - run: python materialization/materialize.py
 
+      # Materialization can report success while the deployed service still
+      # sees an empty online store, and nothing downstream would notice:
+      # /health checks Valkey with a ping, and a ping is exactly as green
+      # against zero keys as against three hundred. Serving would just fall
+      # through to the on-demand path for every request — roughly 2.5x the
+      # latency, permanently, with a healthy-looking dashboard.
+      #
+      # So assert population, not reachability, and assert it through the
+      # deployed service rather than from this runner: that covers the whole
+      # path this job exists to keep working.
+      - name: Verify the online store is populated
+        run: |
+          n=$(curl -fsS --retry 5 --retry-all-errors --retry-delay 10 \
+                "${{ secrets.CLOUD_RUN_URL }}/metrics" \
+                | python -c "import sys, json; print(json.load(sys.stdin)['online_store_entities'])")
+          echo "online_store_entities=$n"
+          if [ "$n" -le 0 ]; then
+            echo "::error::Online store is empty after materialization — serving is degraded to the on-demand path."
+            exit 1
+          fi
+
   health-check:
     runs-on: ubuntu-latest
     steps:
