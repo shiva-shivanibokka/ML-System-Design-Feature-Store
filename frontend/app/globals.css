@@ -857,7 +857,9 @@ table {
   background: var(--cyan);
   color: var(--bg);
 }
-.tip .pop {
+/* Not `.tip .pop` — the popover is portalled to <body>, so it is no longer a
+   descendant of its trigger. See components/Tip.tsx for why. */
+.pop {
   position: fixed;
   transform: translate(-50%, -100%);
   width: max-content;
@@ -876,7 +878,7 @@ table {
   box-shadow: 0 14px 40px -12px rgba(0, 0, 0, 0.9);
   pointer-events: none;
 }
-.tip .pop.pop-below {
+.pop.pop-below {
   transform: translate(-50%, 10px);
 }
 

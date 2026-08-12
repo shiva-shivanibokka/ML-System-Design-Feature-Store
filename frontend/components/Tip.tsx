@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 const EDGE_PAD = 12;
 const POP_HALF_WIDTH = 140; // half of .pop's max-width, keeps it off-screen edges
@@ -10,6 +11,13 @@ const POP_HALF_WIDTH = 140; // half of .pop's max-width, keeps it off-screen edg
  * getBoundingClientRect() rather than `position: absolute` inside the
  * document flow — so it's never clipped by an ancestor's `overflow-x: auto`
  * (e.g. a scrolling table wrapper), regardless of where the trigger sits.
+ *
+ * It is also portalled to <body>, because `position: fixed` alone is not
+ * enough: `.stage` (the glass panel wrapping every tab) sets
+ * `backdrop-filter`, and a non-`none` filter/backdrop-filter/transform makes
+ * an element the containing block for its fixed descendants. Left in the
+ * tree, the popover resolved its viewport coordinates against `.stage`
+ * instead and rendered offset from the "?" by the panel's own position.
  */
 export default function Tip({ text }: { text: string }) {
   const [pos, setPos] = useState<{ x: number; y: number; below: boolean } | null>(null);
@@ -62,16 +70,18 @@ export default function Tip({ text }: { text: string }) {
       >
         ?
       </button>
-      {pos && (
-        <span
-          id={popId}
-          role="tooltip"
-          className={`pop${pos.below ? " pop-below" : ""}`}
-          style={{ left: pos.x, top: pos.y }}
-        >
-          {text}
-        </span>
-      )}
+      {pos &&
+        createPortal(
+          <span
+            id={popId}
+            role="tooltip"
+            className={`pop${pos.below ? " pop-below" : ""}`}
+            style={{ left: pos.x, top: pos.y }}
+          >
+            {text}
+          </span>,
+          document.body
+        )}
     </span>
   );
 }
