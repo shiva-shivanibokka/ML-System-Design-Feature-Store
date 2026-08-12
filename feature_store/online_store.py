@@ -151,7 +151,9 @@ def get_entities_batch(entity_ids: list[int]) -> dict[int, dict[str, float] | No
     except RedisError as exc:
         # Report every entity as a miss so the batch endpoint falls through to
         # on-demand computation rather than failing the whole request.
-        log.warning("online_store_unavailable", requested=len(entity_ids), error=str(exc))
+        log.warning(
+            "online_store_unavailable", requested=len(entity_ids), error=str(exc)
+        )
         return {eid: None for eid in entity_ids}
 
     latency_ms = (time.perf_counter() - t0) * 1000

@@ -145,9 +145,7 @@ app.add_middleware(
 class FeatureResponse(BaseModel):
     entity_id: int
     features: dict[str, float]
-    source: str = Field(
-        description="'online_store' (Valkey) or 'on_demand' (DuckDB)"
-    )
+    source: str = Field(description="'online_store' (Valkey) or 'on_demand' (DuckDB)")
     latency_ms: float
     feature_version: str
 
