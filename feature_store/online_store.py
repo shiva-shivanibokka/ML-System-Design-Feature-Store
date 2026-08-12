@@ -47,14 +47,17 @@ from feature_store.connections import get_redis_client
 
 log = structlog.get_logger()
 
-# This instance is shared with another project, so the namespace matters.
+# Namespaced so this store can share an instance if it ever has to.
 #
-# The Upstash free plan allows a single database, and the recommendation engine
-# already owns one. Sharing is safe because the two keyspaces are disjoint —
-# that project writes `rec:{user_id}:{top_n}` and only ever scans `rec:*`, and
-# neither project issues FLUSHDB/FLUSHALL or an unscoped KEYS. Overridable so
-# that stays a deliberate property rather than a coincidence: point a second
-# deployment at the same instance by giving it a different prefix.
+# It currently has a Redis Cloud database to itself. The alternative considered
+# was sharing the recommendation engine's Upstash instance, whose free plan
+# allows only one database — safe in principle, since that project writes
+# `rec:{user_id}:{top_n}` and neither issues FLUSHDB or an unscoped KEYS, but a
+# dedicated instance avoids sharing a quota and coupling two demos together.
+#
+# Overridable anyway: co-tenancy should be a stated property rather than a
+# coincidence, and this is what makes a second deployment against one instance a
+# config change instead of a code change.
 ENTITY_KEY_PREFIX = os.getenv("ONLINE_STORE_PREFIX", "entity:user")
 TTL_SECONDS = 48 * 3600  # 48 hours
 

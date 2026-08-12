@@ -1,12 +1,10 @@
 name: Materialize
 
 on:
-  # Daily, not six-hourly. The offline store is now a static file committed to
-  # this repo, so every run recomputes byte-identical features — and the Upstash
-  # instance is shared with the recommendation engine on a single free-plan
-  # database, where ~600 writes per run is quota spent to change nothing. Daily
-  # is enough to refresh the 48h TTL on the entity hashes, which is the only
-  # thing that actually expires.
+  # Daily, not six-hourly. The offline store is a static file committed to this
+  # repo, so every run recomputes byte-identical features and rewrites them to
+  # the same keys — four times a day to change nothing. Daily still refreshes
+  # the 48h TTL on the entity hashes, which is the only thing that expires.
   schedule: [{ cron: "0 6 * * *" }]
   workflow_dispatch:
 
