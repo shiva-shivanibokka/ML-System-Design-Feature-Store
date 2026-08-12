@@ -1,7 +1,13 @@
 name: Materialize
 
 on:
-  schedule: [{ cron: "0 */6 * * *" }]
+  # Daily, not six-hourly. The offline store is now a static file committed to
+  # this repo, so every run recomputes byte-identical features — and the Upstash
+  # instance is shared with the recommendation engine on a single free-plan
+  # database, where ~600 writes per run is quota spent to change nothing. Daily
+  # is enough to refresh the 48h TTL on the entity hashes, which is the only
+  # thing that actually expires.
+  schedule: [{ cron: "0 6 * * *" }]
   workflow_dispatch:
 
 env:
@@ -24,9 +30,15 @@ jobs:
       - run: pip install -r requirements.api.txt
       - run: python materialization/materialize.py
 
-  keep-warm:
+  health-check:
     runs-on: ubuntu-latest
     steps:
-      # Ping the Cloud Run service /health so a scale-to-zero instance is warm.
+      # Named for what it actually does. A scale-to-zero Cloud Run instance idles
+      # out in minutes, so a scheduled ping never kept anything warm; its real
+      # value is catching a service that has stopped answering.
+      #
+      # /health returns 503 only when every component is down, so `-f` fails the
+      # job on a total outage but tolerates "degraded" — which is the correct
+      # alarm threshold, since the offline store alone can serve every endpoint.
       # --retry rides out a cold start; a persistent failure surfaces (no `|| true`).
       - run: curl -fsS --retry 5 --retry-all-errors --retry-delay 10 "${{ secrets.CLOUD_RUN_URL }}/health"

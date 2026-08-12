@@ -37,6 +37,7 @@ falling to zero.
 
 from __future__ import annotations
 
+import os
 import time
 
 import structlog
@@ -46,12 +47,21 @@ from feature_store.connections import get_redis_client
 
 log = structlog.get_logger()
 
-ENTITY_KEY_PREFIX = "entity:user"
+# This instance is shared with another project, so the namespace matters.
+#
+# The Upstash free plan allows a single database, and the recommendation engine
+# already owns one. Sharing is safe because the two keyspaces are disjoint —
+# that project writes `rec:{user_id}:{top_n}` and only ever scans `rec:*`, and
+# neither project issues FLUSHDB/FLUSHALL or an unscoped KEYS. Overridable so
+# that stays a deliberate property rather than a coincidence: point a second
+# deployment at the same instance by giving it a different prefix.
+ENTITY_KEY_PREFIX = os.getenv("ONLINE_STORE_PREFIX", "entity:user")
 TTL_SECONDS = 48 * 3600  # 48 hours
 
 # Maintained index of entity ids currently written, so /metrics can SCARD
 # instead of SCAN-ing the whole keyspace on every unauthenticated call.
-ENTITY_INDEX_KEY = "entities:index"
+# Derived from the prefix so the index cannot outlive a namespace change.
+ENTITY_INDEX_KEY = f"{ENTITY_KEY_PREFIX}:index"
 
 
 def _entity_key(entity_id: int) -> str:
