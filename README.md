@@ -1,5 +1,16 @@
 # ML System Design: End-to-End Feature Store
 
+> [!IMPORTANT]
+> **The hosted demo is temporary.** This project's backend runs on Google Cloud
+> Run under a Google Cloud free trial that ends **around 19 September 2026**.
+> When the trial closes the service is stopped, and every `run.app` link below
+> stops responding. The hosted frontend will keep loading after that date, but it
+> will not be able to reach its API, so it will show no data.
+>
+> Nothing in this repository depends on that. The code, tests and results are
+> complete, and the instructions below run the whole thing locally.
+
+
 > **Recruiter TL;DR**
 > - **What it is:** a full, live feature store — offline + online stores, point-in-time-correct training data, a dual-path serving API, and a monitoring dashboard — that structurally prevents *training-serving skew*, the #1 silent bug in production ML.
 > - **Hardest problem solved:** guaranteeing the *same* feature values at training and serving time by computing every feature from **one** SQL definition reused across offline backfill, on-demand serving, and training's point-in-time joins (DuckDB `ASOF JOIN`) — so leakage-free training data and skew-free serving are impossible to drift apart by construction.
