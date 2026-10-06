@@ -1,5 +1,23 @@
 # Repo Audit Report — ML-System-Design-Feature-Store
 
+> [!WARNING]
+> **Historical snapshot, 2026-07-12. Do not read this as the current state.**
+> Many of its findings have since been fixed and several of its figures are
+> stale: it reports ~59% test coverage (now 86%), a `txns_before >= 2` threshold
+> that was later raised to 5 and has now been returned to 2 with the reason
+> recorded, and it describes a live MotherDuck-backed API that no longer exists.
+> Its scorecard is all-red for a codebase that has moved on.
+>
+> One thing it got right that a later review got backwards: it flagged the
+> missing unique constraint on `feature_history`. `configs/schema.sql` declares
+> a primary key, but every CREATE there is `IF NOT EXISTS`, so the declaration
+> never reached the already-created table. The shipped database genuinely had no
+> primary key, and `materialization/backfill.py` failed on all 91 snapshots
+> because `INSERT OR IGNORE` had no conflict target. `feature_store/schema.py`
+> now migrates the table on load.
+>
+> For the current state, run the test suite and read README.md.
+
 **Date:** 2026-07-12
 **Stack detected:** Python 3.11 (FastAPI · DuckDB/MotherDuck · redis/Valkey · Pandera · LightGBM · scipy · structlog) + TypeScript/React (Next.js 16 App Router). Deployed: frontend on Vercel, backend on Google Cloud Run, offline store MotherDuck, online store Aiven Valkey.
 **Scope:** whole repo — `feature_store/`, `serving/`, `materialization/`, `skew/`, `lineage/`, `training/`, `data/`, `configs/`, `tests/`, `.github/workflows/`, `Dockerfile`, `frontend/` (app + components + lib), docs. Ran via 4 parallel auditors across the 13 passes.

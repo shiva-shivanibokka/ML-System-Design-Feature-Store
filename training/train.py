@@ -82,8 +82,20 @@ def generate_labels(client, n_users: int = 10_000) -> pd.DataFrame:
     the "before" and "after" windows from historical data.
     """
     log.info("generating_labels")
-    now = datetime.utcnow()
+    # Anchor the label windows to the newest event in the data, not to wall-clock
+    # now. The committed warehouse is a fixed snapshot: anchoring to utcnow()
+    # meant the "before" window walked off the end of the data as time passed,
+    # HAVING txns_before > 0 matched nothing, and the whole script died
+    # downstream with KeyError: 'entity_id' on an empty frame -- taking the
+    # advertised ROC-AUC with it. Anchoring to max(event_time) makes training
+    # reproducible from any clone at any date.
+    rows = client.execute("SELECT max(event_time) FROM raw_transactions")
+    latest_event = rows[0][0] if rows and rows[0][0] is not None else None
+    now = latest_event if latest_event is not None else datetime.utcnow()
     label_date = now - timedelta(days=30)
+    log.info(
+        "label_window_anchor", anchor=now.isoformat(), label_date=label_date.isoformat()
+    )
 
     # Get all users with their transaction history
     rows = client.execute(
@@ -109,8 +121,18 @@ def generate_labels(client, n_users: int = 10_000) -> pd.DataFrame:
     )
 
     df = pd.DataFrame(rows, columns=["entity_id", "txns_before", "txns_after"])
-    # Churn: had activity before label date but none after
-    df["churned"] = ((df["txns_after"] == 0) & (df["txns_before"] >= 5)).astype(int)
+    # Churn: had activity before the label date but none after.
+    #
+    # The "before" threshold has to match the activity level of the data, not be
+    # picked for its own sake. At >= 5 successful transactions in a 30-day window
+    # almost no free/basic user qualifies (their generated rate is 1.5-4 per 30
+    # days), so the positive class collapsed to 3 rows in 244 and the model
+    # scored a meaningless AUC of 1.0 on three examples. >= 2 is the threshold
+    # this dataset can actually support.
+    MIN_TXNS_BEFORE = 2
+    df["churned"] = (
+        (df["txns_after"] == 0) & (df["txns_before"] >= MIN_TXNS_BEFORE)
+    ).astype(int)
     df["label_timestamp"] = label_date
 
     churn_rate = df["churned"].mean()

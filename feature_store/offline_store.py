@@ -62,7 +62,10 @@ def get_training_dataset(
     label_timestamps: list[tuple[int, datetime]], feature_version: str = "v1"
 ) -> pd.DataFrame:
     if not label_timestamps:
-        return pd.DataFrame()
+        # A bare DataFrame() has no columns, so a caller that merges on
+        # entity_id gets KeyError instead of an empty result. Return the typed
+        # empty frame the non-empty path would have produced.
+        return pd.DataFrame(columns=["entity_id", "label_time", *FEATURE_COLS])
     client = get_duckdb_client()
     labels = pd.DataFrame(label_timestamps, columns=["entity_id", "label_time"])
     # Unique per-call view name: register()+execute() are two separate lock
