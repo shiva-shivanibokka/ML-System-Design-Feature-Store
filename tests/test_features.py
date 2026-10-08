@@ -94,17 +94,32 @@ def test_compute_and_store_is_idempotent_for_same_snapshot():
 
 
 def test_on_demand_matches_stored_features():
+    """Every feature must agree across the two serving paths, not just one.
+
+    The README's central claim is that offline and on-demand serving are
+    "impossible to drift apart by construction". An earlier version of this test
+    selected txn_count_30d and then asserted only on plan_encoded -- the one
+    feature that is time-invariant and therefore cannot diverge -- so the test
+    named for the guarantee could not fail. Against the committed store the two
+    paths differed on 8 of 13 features. Assert all of them.
+    """
     client = _DuckClient(duckdb.connect(":memory:"))
     now = _seed(client)
     features.compute_and_store(client, snapshot_time=now, feature_version="v1")
-    stored = client.execute(
-        "SELECT txn_count_30d, plan_encoded FROM feature_history WHERE entity_id = 1"
-    )[0]
+    cols = ", ".join(features.FEATURE_COLS)
+    row = client.execute(f"SELECT {cols} FROM feature_history WHERE entity_id = 1")[0]
+    stored = dict(zip(features.FEATURE_COLS, (float(v) for v in row)))
+
     on_demand = features.compute_on_demand(client, entity_id=1, feature_version="v1")
-    # On-demand uses 'now' as snapshot; with the seed dates it recomputes the same
-    # counts. Guard only the version-stable feature to prove the shared SQL path.
     assert on_demand is not None
-    assert on_demand["plan_encoded"] == stored[1]
+    mismatched = {
+        col: (stored[col], on_demand[col])
+        for col in features.FEATURE_COLS
+        if stored[col] != on_demand[col]
+    }
+    assert (
+        not mismatched
+    ), f"serving paths disagree on {len(mismatched)} features: {mismatched}"
 
 
 def test_compute_on_demand_batch_matches_single_entity_calls_and_handles_unknown():
@@ -115,3 +130,37 @@ def test_compute_on_demand_batch_matches_single_entity_calls_and_handles_unknown
     assert batch[1] is not None
     assert batch[1]["plan_encoded"] == single["plan_encoded"]
     assert batch[999] is None  # unknown entity resolves to None, not dropped
+
+
+def test_open_tickets_does_not_read_resolutions_from_the_future():
+    """A ticket resolved AFTER the snapshot was open AT the snapshot.
+
+    open_tickets used to filter on raw_support_tickets.resolved, a current-state
+    flag with no time attached, so a ticket still open at T but resolved later
+    was counted as closed at T -- future information inside a historical feature,
+    and open_tickets is a declared model_input. Reproduced before the fix: this
+    asserted 1.0 and got 0.0.
+    """
+    client = _DuckClient(duckdb.connect(":memory:"))
+    apply_schema(client)
+    snapshot = datetime(2026, 1, 1)
+    client.execute(
+        "INSERT INTO raw_users VALUES (1, DATE '2025-01-01', 'US', 'pro', '25-34', now())"
+    )
+    client.execute(
+        "INSERT INTO raw_support_tickets "
+        "(ticket_id, user_id, severity, resolved, resolved_at, event_time) VALUES "
+        # raised 10 days before the snapshot, resolved 20 days AFTER it
+        "(1, 1, 'high', 1, TIMESTAMP '2026-01-21', TIMESTAMP '2025-12-22'), "
+        # raised and resolved well before the snapshot: genuinely closed at T
+        "(2, 1, 'low', 1, TIMESTAMP '2025-12-05', TIMESTAMP '2025-12-01'), "
+        # still unresolved
+        "(3, 1, 'low', 0, NULL, TIMESTAMP '2025-12-28')"
+    )
+    row = features.compute_on_demand_at(client, entity_id=1, snapshot_time=snapshot)
+    assert row is not None
+    # tickets 1 and 3 were open at the snapshot; ticket 2 was not.
+    assert row["open_tickets"] == 2.0, (
+        f"expected 2 open tickets as of {snapshot}, got {row['open_tickets']} -- "
+        "a resolution dated after the snapshot leaked backwards"
+    )

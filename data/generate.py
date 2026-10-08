@@ -3,13 +3,22 @@ data/generate.py
 ================
 Generates synthetic raw data and loads it into DuckDB/MotherDuck.
 
-Simulates three upstream warehouse tables:
-  - raw_users            10,000 user profiles
-  - raw_transactions     ~1.2M transaction events (90 days of history)
-  - raw_support_tickets  ~80K support ticket events
+Simulates three upstream warehouse tables. The committed store is built with
+--users 1500 --days 90 --seed 42, which yields:
+  - raw_users            1,500 user profiles
+  - raw_transactions     ~17.5K transaction events (90 days of history)
+  - raw_support_tickets  ~2.5K support ticket events
+
+The docstring used to advertise 10,000 users and ~1.2M transactions, which is
+what --users 10000 produces but is not what ships: the committed DuckDB file held
+300 users. Those figures are now the ones actually committed.
+
+WARNING: this DELETEs and rewrites the raw tables in the DuckDB file named by
+DUCKDB_PATH, which defaults to the tracked feature_store.duckdb. Point DUCKDB_PATH
+somewhere else if you do not want to replace the committed store.
 
 Usage:
-    python data/generate.py
+    python data/generate.py --users 1500 --days 90 --seed 42   # the committed store
     python data/generate.py --users 5000 --days 60
 """
 
@@ -42,6 +51,9 @@ COUNTRIES = ["US", "UK", "DE", "FR", "CA", "AU", "IN", "BR", "SG", "JP"]
 COUNTRY_WEIGHTS = [0.35, 0.12, 0.10, 0.08, 0.08, 0.06, 0.08, 0.05, 0.04, 0.04]
 AGE_BUCKETS = ["18-24", "25-34", "35-44", "45+"]
 AGE_WEIGHTS = [0.20, 0.35, 0.28, 0.17]
+# Share of users who stop transacting partway through the window.
+CHURN_FRACTION = 0.18
+
 CATEGORIES = ["subscription", "one-time", "addon", "refund-eligible", "trial"]
 SEVERITIES = ["low", "medium", "high", "critical"]
 SEVERITY_WEIGHTS = [0.50, 0.30, 0.15, 0.05]
@@ -52,7 +64,11 @@ def generate_users(n: int, days: int) -> list[dict]:
     now = datetime.utcnow()
     users = []
     for uid in range(1, n + 1):
-        signup_days_ago = random.randint(1, days * 3)  # some users older than window
+        # Signup must predate the whole backfill window. When users could sign up
+        # as recently as yesterday, every snapshot older than their signup
+        # produced a NEGATIVE account_age_days -- 284 such rows shipped in the
+        # committed store, violating the repo's own Pandera Check.ge(0).
+        signup_days_ago = random.randint(days + 1, days * 3)
         users.append(
             {
                 "user_id": uid,
@@ -71,6 +87,15 @@ def generate_transactions(users: list[dict], days: int) -> list[dict]:
     - Enterprise/Pro users transact more frequently and with higher amounts
     - ~5% of transactions fail (risk feature signal)
     - ~2% are refunded
+    - CHURN_FRACTION of users go silent partway through the window and never
+      transact again
+
+    The churn cohort is the point. This repo trains a churn model and reports its
+    AUC, but nothing here used to produce churners: activity was uniform over the
+    window, so in any 30-day label period almost every user transacted and the
+    positive rate collapsed to ~0.4% (1 churner in 264 labelled users), which is
+    not a learnable task. Churn is now generated deliberately, so the label the
+    training script predicts actually exists in the data.
     """
     log.info("generating_transactions", users=len(users), days=days)
     now = datetime.utcnow()
@@ -85,8 +110,20 @@ def generate_transactions(users: list[dict], days: int) -> list[dict]:
         mu = plan_amount_mu[user["plan_type"]]
         n_txns = np.random.poisson(freq * days / 30)
 
+        # A churner goes quiet and never returns. The cutoff must sit OUTSIDE the
+        # 30-day window the label looks at, otherwise a "churner" still transacts
+        # inside it and is labelled active -- which is what happened on the first
+        # attempt: an 18% churn cohort produced only a 3.1% positive rate, 8
+        # positives in 262 rows, which is noise rather than a learnable task.
+        # Going quiet 32-70 days back means a churner is genuinely silent for the
+        # whole labelling window while still having history before it.
+        churned = random.random() < CHURN_FRACTION
+        quiet_since_days_ago = random.uniform(32, 70) if churned else 0.0
+
         for _ in range(n_txns):
             days_ago = random.uniform(0, days)
+            if churned and days_ago < quiet_since_days_ago:
+                continue  # silent after the cutoff
             event_time = now - timedelta(days=days_ago)
 
             r = random.random()
@@ -138,6 +175,17 @@ def generate_support_tickets(users: list[dict], days: int) -> list[dict]:
             age_days = (now - event_time).days
             # Tickets older than 14 days are likely resolved
             resolved = 1 if (age_days > 14 or random.random() < 0.75) else 0
+            # Resolution takes a few days. Recording WHEN lets a historical
+            # feature ask "was this open at time T" instead of reading the
+            # current flag and leaking the future into the past.
+            resolved_at = (
+                event_time + timedelta(days=random.uniform(0.5, 14.0))
+                if resolved
+                else None
+            )
+            if resolved_at is not None and resolved_at > now:
+                resolved_at = None  # not resolved yet as of the data's horizon
+                resolved = 0
 
             tickets.append(
                 {
@@ -145,6 +193,7 @@ def generate_support_tickets(users: list[dict], days: int) -> list[dict]:
                     "user_id": user["user_id"],
                     "severity": random.choices(SEVERITIES, SEVERITY_WEIGHTS)[0],
                     "resolved": resolved,
+                    "resolved_at": resolved_at,
                     "event_time": event_time,
                 }
             )
@@ -195,8 +244,8 @@ def load_tickets(client, tickets: list[dict]) -> None:
     try:
         client.execute(
             "INSERT INTO raw_support_tickets "
-            "(ticket_id, user_id, severity, resolved, event_time) "
-            f"SELECT ticket_id, user_id, severity, resolved, event_time FROM {view}"
+            "(ticket_id, user_id, severity, resolved, resolved_at, event_time) "
+            f"SELECT ticket_id, user_id, severity, resolved, resolved_at, event_time FROM {view}"
         )
     finally:
         client.unregister(view)

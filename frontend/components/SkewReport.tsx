@@ -65,7 +65,7 @@ export default function SkewReport() {
           loading={loading}
           error={error}
           empty={rows.length === 0}
-          emptyMessage="No skew data yet — run the training workflow to capture a snapshot."
+          emptyMessage="No skew data yet. A report needs both a training snapshot (written by training/train.py) and recent rows in feature_history (written by materialization/backfill.py). If both exist and this is still empty, the serving window found no rows — see SERVING_SAMPLE_DAYS in skew/detector.py."
           onRetry={() => run(api.skew())}
         >
           <div style={{ padding: "18px" }}>

@@ -11,9 +11,10 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
+import pandas as pd
 import structlog
 
-from feature_store.validator import validate_single_entity
+from feature_store.validator import validate_feature_batch, validate_single_entity
 
 log = structlog.get_logger()
 
@@ -106,14 +107,26 @@ def feature_select_sql(entity_filter: str = "") -> str:
     LEFT JOIN (
         SELECT
             user_id,
-            count(*) FILTER (WHERE resolved = 0
-                AND event_time < $snapshot)                         AS open_tickets,
+            -- Open AS OF $snapshot: raised before it, and not yet resolved by
+            -- then. Filtering on the current `resolved` flag instead counted a
+            -- ticket that was resolved AFTER the snapshot as already closed --
+            -- future information in a historical feature.
+            count(*) FILTER (WHERE event_time < $snapshot
+                AND (resolved_at IS NULL OR resolved_at >= $snapshot))
+                                                                    AS open_tickets,
             count(*) FILTER (WHERE event_time >= $t30
                 AND event_time < $snapshot)                         AS ticket_rate_30d
         FROM raw_support_tickets
         GROUP BY user_id
     ) sk ON sk.user_id = u.user_id
-    WHERE 1=1 {entity_filter}
+    -- A user who had not signed up yet has no features at this snapshot. Without
+    -- this, backfilling 90 days produced rows for users who did not exist, whose
+    -- account_age_days came out NEGATIVE -- 284 such rows shipped in the
+    -- committed store, each one violating the repo's own Pandera Check.ge(0).
+    -- Excluding them is the point-in-time-correct answer, not a clamp: the
+    -- alternative (greatest(age, 0)) would keep inventing a user who was not
+    -- there.
+    WHERE u.signup_date <= $snapshot {entity_filter}
     """
 
 
@@ -125,6 +138,31 @@ def _windows(snapshot_time: datetime, version: str) -> dict:
         "t30": snapshot_time - timedelta(days=30),
         "t90": snapshot_time - timedelta(days=90),
     }
+
+
+def serving_snapshot_time(client, feature_version: str = "v1") -> datetime:
+    """The as-of time the on-demand path must use to agree with the online store.
+
+    The two serving paths share one SQL body, which guarantees identical
+    *transformations*. It does not guarantee identical *values*: the online store
+    returns whatever was materialized from the newest row in feature_history,
+    while the on-demand path used to compute as of wall-clock now. Against the
+    committed warehouse -- whose newest snapshot is months old -- that made the
+    same entity return different answers depending on which path served it, on 8
+    of 13 features. The README's "impossible to drift apart by construction" was
+    therefore false.
+
+    Anchoring the fallback to the newest stored snapshot makes the claim true:
+    both paths now answer as of the same instant. If feature_history is empty
+    there is nothing to agree with, so we fall back to now -- which is the only
+    sensible as-of time for a warehouse that has never been backfilled.
+    """
+    rows = client.execute(
+        "SELECT max(event_time) FROM feature_history WHERE feature_version = $version",
+        {"version": feature_version},
+    )
+    latest = rows[0][0] if rows else None
+    return latest if latest is not None else datetime.utcnow()
 
 
 def compute_and_store(
@@ -146,6 +184,19 @@ def compute_and_store(
         {"snapshot": snapshot_time, "version": feature_version},
     )
     count = int(rows[0][0]) if rows else 0
+    # The README promises "every feature write is validated before it lands".
+    # It was not true of this path -- the primary offline write -- only of the
+    # offline->online hop in materialize.py and of compute_on_demand. Validate
+    # what we just wrote so the claim holds for the write that actually
+    # populates the store.
+    written = client.execute(
+        "SELECT entity_id, " + ", ".join(FEATURE_COLS) + " FROM feature_history "
+        "WHERE event_time = $snapshot AND feature_version = $version",
+        {"snapshot": snapshot_time, "version": feature_version},
+    )
+    if written:
+        frame = pd.DataFrame(written, columns=["entity_id", *FEATURE_COLS])
+        validate_feature_batch(frame)
     log.info("features_computed", rows=count, snapshot=snapshot_time.isoformat())
     return count
 
@@ -153,7 +204,7 @@ def compute_and_store(
 def compute_on_demand(
     client, entity_id: int, feature_version: str = "v1"
 ) -> dict | None:
-    params = _windows(datetime.utcnow(), feature_version)
+    params = _windows(serving_snapshot_time(client, feature_version), feature_version)
     params["uid"] = entity_id
     rows = client.execute(
         feature_select_sql(entity_filter="AND u.user_id = $uid"), params
@@ -171,6 +222,28 @@ def compute_on_demand(
     return validate_single_entity(raw)
 
 
+def compute_on_demand_at(
+    client, entity_id: int, snapshot_time: datetime, feature_version: str = "v1"
+) -> dict | None:
+    """compute_on_demand at an explicit as-of time.
+
+    compute_on_demand picks the as-of time itself (the newest stored snapshot).
+    Point-in-time behaviour can only be tested by naming the instant, so the
+    as-of time is a parameter here and the two share one body.
+    """
+    params = _windows(snapshot_time, feature_version)
+    params["uid"] = entity_id
+    rows = client.execute(
+        feature_select_sql(entity_filter="AND u.user_id = $uid"), params
+    )
+    if not rows:
+        return None
+    values = rows[0][4:]
+    raw = dict(zip(FEATURE_COLS, (float(v) for v in values)))
+    raw["entity_id"] = entity_id
+    return validate_single_entity(raw)
+
+
 def compute_on_demand_batch(
     client, entity_ids: list[int], feature_version: str = "v1"
 ) -> dict[int, dict | None]:
@@ -184,7 +257,7 @@ def compute_on_demand_batch(
     """
     if not entity_ids:
         return {}
-    params = _windows(datetime.utcnow(), feature_version)
+    params = _windows(serving_snapshot_time(client, feature_version), feature_version)
     params["uids"] = entity_ids
     rows = client.execute(
         feature_select_sql(entity_filter="AND u.user_id IN (SELECT UNNEST($uids))"),

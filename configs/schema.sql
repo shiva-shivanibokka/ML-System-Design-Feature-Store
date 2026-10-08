@@ -19,11 +19,19 @@ CREATE TABLE IF NOT EXISTS raw_transactions (
 );
 
 CREATE TABLE IF NOT EXISTS raw_support_tickets (
-    ticket_id  BIGINT,
-    user_id    BIGINT,
-    severity   VARCHAR,
-    resolved   INTEGER,
-    event_time TIMESTAMP
+    ticket_id   BIGINT,
+    user_id     BIGINT,
+    severity    VARCHAR,
+    resolved    INTEGER,
+    -- When the ticket was resolved. NULL while the ticket is still open.
+    -- `resolved` alone is a CURRENT-STATE flag with no time attached, so a
+    -- historical feature that filtered on it read tomorrow's value: a ticket
+    -- open at snapshot T but resolved afterwards was counted as not-open at T.
+    -- That is future information leaking into a past feature, in open_tickets,
+    -- which is a declared model_input. A resolution timestamp is what makes the
+    -- feature answerable as of T.
+    resolved_at TIMESTAMP,
+    event_time  TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS feature_history (

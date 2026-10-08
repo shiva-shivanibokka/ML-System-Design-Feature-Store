@@ -37,15 +37,34 @@ log = structlog.get_logger()
 
 KS_THRESHOLD = 0.05  # p-value below which we flag skew
 
-# Days of recent serving data to sample. One day is right when materialization
-# runs on a schedule and feature_history is continuously fresh.
+# Standardised mean difference above which a feature is flagged.
 #
-# The deployed demo serves a static offline store baked into the image, so its
-# newest serving rows are as old as the last build. Under a one-day window the
-# sample came back empty and /skew-report returned `{"report": []}` — a blank
-# dashboard tab that looked like a broken endpoint but was an empty query.
-# Env-configurable so the demo can widen the window without changing what the
-# window means for a live deployment.
+# This, not the KS p-value, is what decides `flagged`. Only summary moments are
+# stored, so the KS test below runs on pseudo-samples drawn from
+# Normal(mean, std) with a fixed seed -- its p-value is a deterministic function
+# of (mean, std, n) and carries no information about the real distribution
+# shape. Worse, it scales with the pseudo-sample size rather than with the
+# evidence, so a large n drives p toward 0 and would flag every feature.
+# A standardised mean difference is a statistic the stored moments genuinely
+# support. 0.25 is a conventional "small but real" effect size.
+MEAN_SHIFT_THRESHOLD = 0.25
+
+# Days of recent serving data to sample, counted back from the newest row in
+# feature_history rather than from wall-clock now.
+#
+# Counting back from now was the bug. A static offline store baked into an image
+# has rows no newer than the build, so a one-day window from "now" selects
+# nothing, avg() returns NULL, the insert guard below skips every feature, and
+# /skew-report returns {"report": []} -- a blank dashboard tab that reads as a
+# broken endpoint. The code comment here used to say the window was
+# "env-configurable so the demo can widen it", but SERVING_SAMPLE_DAYS appeared
+# nowhere except its own definition and single use: not in the Dockerfile, not in
+# any workflow, not in .env.example, not in configs/. The documented mitigation
+# was never wired up, so the endpoint was empty out of the box.
+#
+# Anchoring to max(event_time) makes the window mean "the most recent serving
+# data that exists", which is what it was always supposed to mean, and gives the
+# same answer on a live store where the newest row IS roughly now.
 SERVING_SAMPLE_DAYS = int(os.getenv("SERVING_SAMPLE_DAYS", "1"))
 
 
@@ -60,7 +79,13 @@ def _capture_serving_snapshot(client, feature_version: str) -> str:
     and write to skew_snapshots. Returns the snapshot_id.
     """
     snapshot_id = str(uuid.uuid4())[:12]
-    since = datetime.utcnow() - timedelta(days=SERVING_SAMPLE_DAYS)
+    newest = client.execute(
+        "SELECT max(event_time) FROM feature_history WHERE feature_version = $version",
+        {"version": feature_version},
+    )
+    latest_row = newest[0][0] if newest else None
+    anchor = latest_row if latest_row is not None else datetime.utcnow()
+    since = anchor - timedelta(days=SERVING_SAMPLE_DAYS)
     now = datetime.utcnow()
 
     for col in FEATURE_COLS:
@@ -151,7 +176,7 @@ def _run_ks_test(
     mean_shift = abs(tr["mean"] - sv["mean"]) / max(tr["std"], 1e-6)
     # bool(...) unwraps numpy.bool_ — FastAPI's JSON encoder can't serialize the
     # numpy scalar that scipy's comparison returns, which 500s /skew-report.
-    flagged = bool(ks_pvalue < KS_THRESHOLD)
+    flagged = bool(mean_shift >= MEAN_SHIFT_THRESHOLD)
 
     return {
         "feature_name": feature_name,
@@ -164,7 +189,12 @@ def _run_ks_test(
         "mean_shift": round(float(mean_shift), 4),
         "ks_statistic": round(float(ks_stat), 4),
         "ks_pvalue": round(float(ks_pvalue), 4),
+        # Both ks_* values are computed on a normal approximation of the stored
+        # moments, not on the observed values. Reported for continuity, not
+        # relied on: see MEAN_SHIFT_THRESHOLD.
+        "ks_is_approximation": True,
         "flagged": flagged,
+        "flag_basis": "standardised mean difference",
         "training_sample_count": tr.get("sample_count", 0),
         "serving_sample_count": sv.get("sample_count", 0),
     }
