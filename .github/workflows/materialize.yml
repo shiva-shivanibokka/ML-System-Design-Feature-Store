@@ -1,32 +1,17 @@
 name: Materialize
 
 on:
-  # The daily schedule is switched off as of 8 October 2026. It was:
+  # Daily, not six-hourly. The offline store is a static file committed to this
+  # repo, so every run recomputes byte-identical features and rewrites them to
+  # the same keys — four times a day to change nothing. Daily still refreshes
+  # the 48h TTL on the entity hashes, which is the only thing that expires.
   #
-  #   schedule: [{ cron: "0 6 * * *" }]
-  #
-  # Daily, not six-hourly, because the offline store is a static file committed
-  # to this repo, so every run recomputes byte-identical features and rewrites
-  # them to the same keys — four times a day to change nothing. Daily still
-  # refreshed the 48h TTL on the entity hashes, which is the only thing that
-  # expires.
-  #
-  # Why it is off: the Google Cloud billing account behind the deployed service
-  # has been closed, so the Cloud Run API is gone. Both of the assertions below
-  # go through that service and now fail every morning, which is a correct
-  # result reported as a daily failure email about a system nobody is serving.
-  #
-  # Note what does NOT fail: `materialization/materialize.py` still succeeds.
-  # The online store is Aiven Valkey, which is unaffected, so the job writes
-  # three hundred entity hashes into a store that no longer has a reader. That
-  # is the real reason to stop running it — not that it is red, but that the
-  # work it does has no consumer.
-  #
-  # The assertions are deliberately left exactly as they are. Deleting the
-  # verification step would turn this green again while making it a check that
-  # has stopped checking, which is the defect this repository's RESULTS.md
-  # spends six sections documenting. Re-enable the cron when there is a serving
-  # layer for it to verify.
+  # The cron STAYS as of 8 October 2026, and the reason is not materialization.
+  # Aiven powers off a free-tier service that sees no continuative activity, and
+  # this job is the only thing that touches `valkey-150915c3-mlfeature`. Turning
+  # the schedule off to stop a failure email would, a few weeks later, cost the
+  # online store itself. See SERVICES_LEDGER.md in portfolio-keepalive.
+  schedule: [{ cron: "0 6 * * *" }]
   workflow_dispatch:
 
 env:
@@ -59,7 +44,23 @@ jobs:
       # So assert population, not reachability, and assert it through the
       # deployed service rather than from this runner: that covers the whole
       # path this job exists to keep working.
+      #
+      # Suspended on the scheduled path as of 8 October 2026, and run in full on
+      # a manual run. The Google Cloud billing account behind the deployed
+      # service has been closed, so /metrics returns 503 and this assertion
+      # fails every morning about a serving path that no longer exists.
+      #
+      # Note carefully what is and is not being claimed after this change. The
+      # step is NOT deleted and NOT weakened — on `workflow_dispatch` it runs
+      # exactly as before, and it will fail exactly as before if the store is
+      # empty. What changed is that a scheduled run no longer asserts something
+      # about a service that is gone. A green scheduled run therefore means
+      # "materialization succeeded", not "serving is healthy", and that is the
+      # most a run can honestly mean while there is no server.
+      #
+      # Restore by deleting the `if:` when the API is back.
       - name: Verify the online store is populated
+        if: github.event_name == 'workflow_dispatch'
         run: |
           n=$(curl -fsS --retry 5 --retry-all-errors --retry-delay 10 \
                 "${{ secrets.CLOUD_RUN_URL }}/metrics" \
@@ -72,6 +73,11 @@ jobs:
 
   health-check:
     runs-on: ubuntu-latest
+    # Manual only, as of 8 October 2026, for the same reason as the step above:
+    # the service it pings is gone with its billing account, so on a schedule
+    # this job is a daily email reporting a fact that does not change. Kept
+    # intact rather than removed, so it comes back by deleting one line.
+    if: github.event_name == 'workflow_dispatch'
     steps:
       # Named for what it actually does. A scale-to-zero Cloud Run instance idles
       # out in minutes, so a scheduled ping never kept anything warm; its real
