@@ -1,5 +1,7 @@
 # ML System Design: End-to-End Feature Store
 
+> **Measured evaluation: [`RESULTS.md`](RESULTS.md)** — six defects found by running the system rather than reading it, including the online and on-demand paths returning **different values for the same entity**, and an advertised ROC-AUC that could not be reproduced because the training script did not run.
+
 > [!IMPORTANT]
 > **The hosted backend is switched off.** It ran on Google Cloud Run under a free
 > trial whose billing account has since been closed, so the Cloud Run service now
