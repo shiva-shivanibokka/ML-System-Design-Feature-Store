@@ -140,7 +140,7 @@ All figures below are reproducible from this repo — no invented benchmarks.
 
 ```bash
 pip install -r requirements.txt
-pytest tests/ -q          # 45 tests, no external services needed
+pytest tests/ -q          # 48 tests, no external services needed
 ```
 
 Tests are hermetic — they spin up an in-memory DuckDB and `fakeredis`, so they run identically on a laptop and in CI. `ci.yml` runs `ruff` (lint + format check), the full `pytest` suite with a coverage gate, and a Docker build of the backend image on every push.
