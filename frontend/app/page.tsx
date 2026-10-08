@@ -1,6 +1,7 @@
 "use client";
 import { KeyboardEvent, useRef, useState } from "react";
 import StatusPill from "@/components/StatusPill";
+import BackendNotice from "@/components/BackendNotice";
 import FeatureExplorer from "@/components/FeatureExplorer";
 import TrainingPull from "@/components/TrainingPull";
 import SkewReport from "@/components/SkewReport";
@@ -48,6 +49,10 @@ export default function Home() {
         <div className="live-row">
           <StatusPill />
         </div>
+        {/* Shown only when the health check has settled on "offline", so the
+            page says the demo cannot work before a visitor starts pressing
+            retry on panels that will never load. */}
+        <BackendNotice />
       </header>
 
       <nav className="tabs" role="tablist" aria-label="Dashboard sections">

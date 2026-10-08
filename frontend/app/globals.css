@@ -222,12 +222,45 @@ table {
   background: var(--green);
   box-shadow: 0 0 6px rgba(95, 217, 138, 0.7);
 }
-.pill.down {
+.pill.down,
+.pill.waking {
   color: var(--amber);
   border-color: rgba(242, 169, 59, 0.3);
 }
-.pill.down .dot {
+.pill.down .dot,
+.pill.waking .dot {
   background: var(--amber);
+}
+/* Terminal state, and it should not look like a transient one. Amber says
+   "wait"; this is dimmer and unlit, because there is nothing to wait for. */
+.pill.offline {
+  color: var(--text-faint);
+  border-color: var(--border);
+}
+.pill.offline .dot {
+  background: var(--text-faint);
+  box-shadow: none;
+}
+
+/* The standing notice in the hero: the demo cannot work, and here is what can. */
+.notice {
+  margin: 1.5rem 0 0;
+  padding: 0.95rem 1.15rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--amber);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text-dim);
+  font-size: 0.94rem;
+  line-height: 1.65;
+}
+.notice b {
+  color: var(--text);
+  font-weight: 600;
+}
+.notice a {
+  color: var(--text);
+  text-underline-offset: 3px;
 }
 @keyframes pulse {
   0%, 100% { opacity: 0.4; }

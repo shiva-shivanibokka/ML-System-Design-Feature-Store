@@ -1,10 +1,17 @@
 "use client";
 
 /**
- * Shared loading / error / empty presentation for every panel. The error
- * copy assumes the likeliest real-world cause: the Cloud Run backend
- * scales to zero when idle, so the first request can take up to a
- * minute to cold-start — this is a routine state for this app, not a crash.
+ * Shared loading / error / empty presentation for every panel.
+ *
+ * The error copy used to assert a cold start: "it may be cold-starting — the
+ * Cloud Run backend scales to zero when idle and can take up to a minute to
+ * wake". That was a guess about the cause, and once the backend was switched
+ * off for good it was the wrong guess, repeated in every panel, next to a
+ * retry button that could not succeed.
+ *
+ * A panel cannot tell a cold start from a dead service, so it no longer claims
+ * to. It reports what it knows -- the request failed -- and defers the reason
+ * to `BackendNotice`, which is driven by the health check and does know.
  */
 export function DataState({
   loading,
@@ -33,9 +40,9 @@ export function DataState({
     return (
       <div className="state-error" role="alert">
         <p>
-          <strong>Couldn&rsquo;t reach the feature server.</strong> It may be
-          cold-starting — the Cloud Run backend scales to zero when idle
-          and can take up to a minute to wake on the next request.
+          <strong>Couldn&rsquo;t reach the feature server.</strong> If the
+          backend is cold-starting this will succeed on a retry; if it is
+          offline, the notice at the top of the page says so.
         </p>
         <p className="state-error-detail">{error}</p>
         {onRetry && (
