@@ -1,11 +1,32 @@
 name: Materialize
 
 on:
-  # Daily, not six-hourly. The offline store is a static file committed to this
-  # repo, so every run recomputes byte-identical features and rewrites them to
-  # the same keys — four times a day to change nothing. Daily still refreshes
-  # the 48h TTL on the entity hashes, which is the only thing that expires.
-  schedule: [{ cron: "0 6 * * *" }]
+  # The daily schedule is switched off as of 8 October 2026. It was:
+  #
+  #   schedule: [{ cron: "0 6 * * *" }]
+  #
+  # Daily, not six-hourly, because the offline store is a static file committed
+  # to this repo, so every run recomputes byte-identical features and rewrites
+  # them to the same keys — four times a day to change nothing. Daily still
+  # refreshed the 48h TTL on the entity hashes, which is the only thing that
+  # expires.
+  #
+  # Why it is off: the Google Cloud billing account behind the deployed service
+  # has been closed, so the Cloud Run API is gone. Both of the assertions below
+  # go through that service and now fail every morning, which is a correct
+  # result reported as a daily failure email about a system nobody is serving.
+  #
+  # Note what does NOT fail: `materialization/materialize.py` still succeeds.
+  # The online store is Aiven Valkey, which is unaffected, so the job writes
+  # three hundred entity hashes into a store that no longer has a reader. That
+  # is the real reason to stop running it — not that it is red, but that the
+  # work it does has no consumer.
+  #
+  # The assertions are deliberately left exactly as they are. Deleting the
+  # verification step would turn this green again while making it a check that
+  # has stopped checking, which is the defect this repository's RESULTS.md
+  # spends six sections documenting. Re-enable the cron when there is a serving
+  # layer for it to verify.
   workflow_dispatch:
 
 env:
