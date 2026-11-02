@@ -256,7 +256,6 @@ ML-System-Design-Feature-Store/
 ├── tests/                        # 45 infra-free tests: in-memory DuckDB + fakeredis
 ├── .github/workflows/            # ci.yml, materialize.yml (cron), train.yml
 ├── Dockerfile                    # Cloud Run backend image ($PORT/8080)
-├── AUDIT.md · PLAN.md            # Bug-audit report + fix plan (from a full-repo audit)
 ├── requirements.api.txt          # Backend runtime deps
 └── requirements.txt              # Full dev deps (API + training + tooling)
 ```
