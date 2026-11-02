@@ -136,7 +136,7 @@ never ran again and the shipped table had no primary key — which `INSERT OR
 IGNORE` needs as a conflict target. The headline backfill command did not work at
 all on the shipped artifact.
 
-`AUDIT.md` flagged this and a later review dismissed the flag as stale on the
+The self-audit flagged this and a later review dismissed the flag as stale on the
 grounds that the key is present in `schema.sql`. The audit was right about the
 database; `schema.sql` was right about the intent; they had simply never met.
 
@@ -265,10 +265,10 @@ regression test that has never been seen to fail is not evidence.
 | deploy instructions set `MOTHERDUCK_TOKEN` | `materialize.yml` warns it **must stay unset**, because `connections.py` switches to a dead MotherDuck whenever it is non-empty. Following the README broke a clean deploy. Now an explicit warning. |
 | `data/generate.py` docstring: "10,000 user profiles / ~1.2M transactions" | the committed store held 300 users / 4,356 transactions; it now holds 1,500 / 17,535, and the docstring says so |
 
-`AUDIT.md` is linked from the README as "a full self-audit". It is dated
-2026-07-12, its scorecard is entirely red, and several of its figures are stale.
-It now opens with a warning that it is a historical snapshot — and credits the one
-finding it got right that a later reviewer got backwards (defect 3).
+The self-audit was dated 2026-07-12, its scorecard was entirely red, and several
+of its figures had gone stale — so it was removed from the repository rather than
+left to be read as current. Its one genuinely right finding, which a later
+reviewer got backwards, is defect 3 above; that is the part worth keeping.
 
 ---
 

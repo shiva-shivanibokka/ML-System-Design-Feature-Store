@@ -272,7 +272,7 @@ Deliberately out of scope for a free-tier portfolio/demo system, and honest abou
 - **The Materialization tab does not grow by itself** — the scheduled job writes features to Valkey (durable) but its audit-log row lands in the runner's throwaway checkout, so the tab shows the runs baked into the image at build time.
 - **Roadmap:** hosted MLflow (DagsHub) for a persistent model registry; auth + rate limiting before any non-demo exposure; migrating `datetime.utcnow()` to timezone-aware datetimes.
 
-A full self-audit of this codebase (correctness, security, concurrency, performance, tests) lives in [`AUDIT.md`](AUDIT.md), with the corresponding fix plan in [`PLAN.md`](PLAN.md).
+What the self-audit of this codebase found — and what was wrong with the audit itself — is recorded in [`RESULTS.md`](RESULTS.md).
 
 ---
 
